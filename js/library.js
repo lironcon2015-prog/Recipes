@@ -12,23 +12,17 @@
 import {
   listCategories, addCategory, countByCategory, categoryName,
   listVideos, addVideo, updateVideo, removeVideo, getVideo, videoCount,
-  platformName, detectPlatform, embedUrl, embedBlocked, isPortrait, playable, mediaFresh,
+  platformName, detectPlatform,
   posterCandidates, needsPoster, needsDownload, needsUpload, thumbUrl, normalizeUrl,
   readOnly, reload
 } from './videos.js';
-import { needsResolve, lookup, refreshMedia, fetchPoster } from './preview.js';
+import { needsResolve, lookup, fetchPoster } from './preview.js';
 import * as cloud from './cloud.js';
 import * as posters from './posters.js';
 import { state as sync, syncNow, onSync, autoOn } from './sync.js';
-import { $, el, icon, toast, whenText, agoText, sheet, openLayer, onEscape, afterLayers, confirmBox, readClipboard } from './ui.js';
+import { $, el, icon, toast, whenText, agoText, sheet, afterLayers, readClipboard } from './ui.js';
 import { VERSION } from './version.js';
-
-/* פלטפורמות שהנגן המשובץ שלהן הוא דף שלם (כותרת, לייקים, תגובות) — למסך
-   מלא עוברים בהן לקובץ הווידאו */
-const CHROME = new Set(['instagram', 'facebook', 'tiktok']);
-
-/* פלטפורמות שהדף שלהן מצהיר על קובץ וידאו או ניתן לשיבוץ */
-const FETCHABLE = new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'x', 'vimeo']);
+import { buildPlayer } from './player.js';
 
 /* רשת או לפי קטגוריה — הבחירה נשמרת במכשיר */
 const VIEW_KEY = 'rc:view';
@@ -450,291 +444,20 @@ function buildEditor(prefill, video) {
 }
 
 /* --- הנגן ---
-   שכבה מעל הדף ולא חלק מהכרטיס (nines: גלילה של נגן בתוך כרטיס למרכז
-   נכשלה שוב ושוב). הנגן ממלא את מה שנשאר בין הכותרת לפרטים. */
+   המסך עצמו ב-player.js (כיוון א׳ + 1ג׳ במוקאפ). כאן רק מה שהוא צריך
+   מהספרייה: התמונות השמורות, העריכה, וציור הספרייה מחדש אחרי שינוי. */
 
 function openPlayer(id) {
-  afterLayers(() => buildPlayer(id));
-}
-
-function buildPlayer(id) {
-  const v = getVideo(id);
-  if (!v) return;
-  const embed = embedUrl(playable(v));
-  const canFetch = autoOn() && FETCHABLE.has(v.platform);
-  const name = platformName(v.platform);
-
-  const layer = el('div.player', { role: 'dialog', 'aria-modal': 'true', 'aria-label': v.title });
-  const shut = el('button.icon-btn', { type: 'button', 'aria-label': 'סגירה' }, icon('x'));
-  const full = el('button.icon-btn', { type: 'button', 'aria-label': 'מסך מלא' }, icon('expand'));
-  const exitFull = el('button.icon-btn.exit-full', { type: 'button', 'aria-label': 'יציאה ממסך מלא' }, icon('shrink'));
-  const stage = el('div.stage');
-  let offKey = null;
-
-  /* מסך מלא, בשלוש דרגות לפי מה שהמכשיר מרשה:
-     · אייפון: רק <video> יכול להיכנס למסך מלא אמיתי (webkitEnterFullscreen),
-       ומה שמנוגן בנגן המשובץ של אינסטגרם או יוטיוב (iframe) — לא.
-     · אנדרואיד ומחשב: כל השכבה נכנסת למסך מלא (requestFullscreen).
-     · ובכל מקרה: הכותרת והפרטים יורדים והסרטון ממלא את כל המסך
-       (immersive). זה מה שנשאר באייפון לנגן משובץ, ובסיבוב לרוחב הוא מספיק. */
-  let immersive = false;
-  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
-  const setImmersive = on => { immersive = on; layer.classList.toggle('immersive', on); };
-  const enterFull = async () => {
-    let vid = stage.querySelector('video');
-    /* הנגן המשובץ של אינסטגרם (ופייסבוק, טיקטוק) הוא דף שלם — כותרת, לייקים,
-       תגובות — ואי אפשר להוריד ממנו כלום מבחוץ. "מסך מלא" שלו נראה כמו
-       בצילום של בעל הריפו: הסרטון בחצי העליון ומתחתיו אינסטגרם. לכן לפני
-       מסך מלא עוברים לקובץ הווידאו עצמו (og:video), שהוא רק הסרטון. */
-    /* יוטיוב, וימאו ודרייב משבצים נגן נקי — הוא ממלא את המסך כמו שהוא */
-    if (!vid && CHROME.has(v.platform)) {
-      let src = v.media && mediaFresh(v) ? v.media : null;
-      if (!src && canFetch) {
-        full.disabled = true;
-        full.classList.add('spin');
-        const fresh = await refreshMedia(v.url);
-        full.disabled = false;
-        full.classList.remove('spin');
-        if (fresh.media) {
-          src = fresh.media;
-          if (!readOnly()) updateVideo(v.id, { media: src });
-          v.media = src;
-          v.mediaAt = Date.now();
-        }
-      }
-      if (src) {
-        showFile(src);
-        vid = stage.querySelector('video');
-      } else {
-        /* בלי קובץ אין מסך מלא אמיתי. עדיף לומר את זה מאשר להגדיל את הדף של אינסטגרם */
-        toast('הסרטון הזה לא נפתח כאן למסך מלא — ' + name + ' לא נותנת את הקובץ. "פתיחה ב' + name + '" מציג אותו שם.');
-        return;
-      }
-    }
-    const canElement = document.fullscreenEnabled || document.webkitFullscreenEnabled;
-    if (vid && !canElement && vid.webkitEnterFullscreen) {
-      try { vid.webkitEnterFullscreen(); return; } catch (e) { /* נופלים למצב הממלא */ }
-    }
-    setImmersive(true);
-    try {
-      if (layer.requestFullscreen) await layer.requestFullscreen({ navigationUI: 'hide' });
-      else if (layer.webkitRequestFullscreen) layer.webkitRequestFullscreen();
-    } catch (e) { /* לא הורשה — המצב הממלא מספיק */ }
-  };
-  const leaveFull = () => {
-    setImmersive(false);
-    if (!fsElement()) return;
-    try {
-      const r = (document.exitFullscreen || document.webkitExitFullscreen).call(document);
-      if (r && r.catch) r.catch(() => {});
-    } catch (e) { /* כבר יצא */ }
-  };
-  /* יציאה דרך המערכת (מחווה, כפתור "חזרה") מחזירה גם את הכותרת והפרטים */
-  const onFsChange = () => { if (!fsElement() && immersive) setImmersive(false); };
-  document.addEventListener('fullscreenchange', onFsChange);
-  document.addEventListener('webkitfullscreenchange', onFsChange);
-  full.onclick = enterFull;
-  exitFull.onclick = leaveFull;
-
-  const close = openLayer(() => {
-    if (offKey) offKey();
-    document.removeEventListener('fullscreenchange', onFsChange);
-    document.removeEventListener('webkitfullscreenchange', onFsChange);
-    if (fsElement()) leaveFull();
-    /* עצירה מפורשת: אלמנט שנמחק ממשיך לפעמים להשמיע */
-    const media = layer.querySelector('video');
-    if (media) { media.pause(); media.removeAttribute('src'); media.load(); }
-    layer.remove();
-  });
-  shut.onclick = close;
-  offKey = onEscape(() => (immersive ? leaveFull() : close()));
-
-
-  const msg = text => {
-    const m = el('p.msg', null, text + ' ');
-    m.appendChild(el('a', { href: v.url, target: '_blank', rel: 'noopener noreferrer', text: 'פתיחה ב' + name }));
-    return m;
-  };
-
-  const showFile = src => {
-    stage.textContent = '';
-    const vid = el('video', { src, controls: true, playsInline: true, preload: 'metadata', autoplay: true });
-    vid.setAttribute('playsinline', '');
-    const still = posterUrls.get(v.id);
-    if (still) vid.poster = still;
-    /* כתובת חתומה שפגה — מרעננים פעם אחת, ורק אז נופלים לנגן המשובץ */
-    let retried = false;
-    vid.onerror = async () => {
-      if (retried) { fallback(); return; }
-      retried = true;
-      const fresh = await refreshMedia(v.url);
-      if (fresh.media && fresh.media !== src) {
-        if (!readOnly()) updateVideo(v.id, { media: fresh.media });
-        vid.src = fresh.media;
-        vid.load();
-        return;
-      }
-      fallback();
-    };
-    stage.appendChild(vid);
-  };
-
-  const showEmbed = src => {
-    stage.textContent = '';
-    const frame = el('iframe', { src, title: v.title, allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share', allowFullscreen: true });
-    frame.referrerPolicy = 'strict-origin-when-cross-origin';
-    if (isPortrait(playable(v))) frame.classList.add('tall');
-    stage.appendChild(frame);
-    /* מה שקורה בתוך הנגן המשובץ שייך לפלטפורמה ואי אפשר לקרוא אותו —
-       לכן דרך היציאה כתובה מראש בכפתור למטה */
-  };
-
-  const fallback = () => {
-    if (embed) { showEmbed(embed); return; }
-    cover('לא הצלחנו לנגן כאן.');
-  };
-
-  /* מצב התחלתי: התמונה, וכפתור ניגון גדול. הנגינה מתחילה בלחיצה — כך גם
-     הקול מותר, וגם לא נשלחת בקשה לפלטפורמה בכל פתיחה של מתכון. */
-  const cover = why => {
-    stage.textContent = '';
-    const still = posterCandidates(v, posterUrls.get(v.id))[0];
-    if (still) {
-      const img = el('img.cover', { alt: '', src: still });
-      img.referrerPolicy = 'no-referrer';
-      img.onerror = () => img.remove();
-      stage.appendChild(img);
-    }
-    const playable_ = v.media || embed || canFetch;
-    if (playable_ && !why) {
-      const big = el('button.big.glass', { type: 'button', 'aria-label': 'ניגון' }, icon('play'));
-      big.onclick = () => play(big);
-      stage.appendChild(big);
-    } else {
-      stage.appendChild(msg(why || embedBlocked(playable(v)) || 'אי אפשר לנגן את הקישור הזה בתוך האפליקציה.'));
-    }
-  };
-
-  const play = async big => {
-    /* הנגן המשובץ קודם: הוא נבנה מהקישור הקבוע ולא פג. הקובץ עצמו רק
-       כשאין נגן משובץ (קישור מקוצר), כי הכתובת שלו פגה אחרי שעות. */
-    if (embed) { showEmbed(embed); return; }
-    if (v.media && mediaFresh(v)) { showFile(v.media); return; }
-    if (canFetch) {
-      big.disabled = true;
-      big.classList.add('spin');
-      const fresh = await refreshMedia(v.url);
-      if (fresh.media) {
-        if (!readOnly()) updateVideo(v.id, { media: fresh.media, full: fresh.full || undefined });
-        v.media = fresh.media;
-        showFile(fresh.media);
-        return;
-      }
-      if (fresh.full && embedUrl(fresh.full)) {
-        if (!readOnly()) updateVideo(v.id, { full: fresh.full });
-        showEmbed(embedUrl(fresh.full));
-        return;
-      }
-    }
-    if (v.media) { showFile(v.media); return; }
-    cover('לא הצלחנו לנגן כאן.');
-  };
-
-  cover();
-
-  /* הפאנל שמתחת לסרטון — נמוך ככל האפשר (בעל הריפו: "גבוה מדי, מסתיר את
-     הסרטון"): שורה אחת של קטגוריה ופעולות, ושתי שורות מההערה. כל השאר —
-     המתכון המלא, תמונה חסרה — רק כשמבקשים ("המתכון המלא"). */
-  const bottom = el('div.player-bot');
-  const tags = el('div.tags');
-  if (v.category && categoryName(v.category)) tags.appendChild(el('span.chip', { 'aria-pressed': 'true', text: categoryName(v.category) }));
-  tags.append(whenText(v.at));
-  const openOut = el('a.btn.sm', { href: v.url, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'פתיחה ב' + name }, icon('ext'), name);
-  const bar = el('div.pbar', null, tags, openOut);
-  if (!readOnly()) {
-    const edit = el('button.btn.icon.sm', { type: 'button', 'aria-label': 'עריכה', onclick: () => { close(); openEditor(null, getVideo(v.id)); } }, icon('pen'));
-    const del = el('button.btn.icon.sm', { type: 'button', 'aria-label': 'מחיקה' }, icon('trash'));
-    del.onclick = () => {
-      bar.hidden = true;
-      bottom.insertBefore(confirmBox('למחוק את "' + v.title + '"?', 'מחיקה', () => {
-        removeVideo(v.id);
-        posterUrls.delete(v.id);
-        close();
-        paint();
-        toast('נמחק');
-        syncNow();
-      }, () => { bar.hidden = false; }), bar.nextSibling);
-    };
-    bar.append(edit, del);
-  }
-  bottom.appendChild(bar);
-
-  const extra = el('div.pextra');
-  if (v.note) {
-    /* ההערה היא המתכון עצמו — רכיבים, ערכים, שלבים. בקיצור: שתי שורות של
-       הטקסט כמו שהוא. "המתכון המלא": הסרטון מתכווץ לשליש העליון וממשיך
-       לנגן, והמתכון במבנה (formatNote) נגלל בשאר המסך. */
-    const preview = el('button.preview', { type: 'button', text: v.note.split(/\r?\n/).map(l => l.trim()).filter(Boolean).join(' · ') });
-    const recipe = el('div.recipe', null, formatNote(v.note));
-    const more = el('button.more', { type: 'button' });
-    const setReading = on => {
-      layer.classList.toggle('reading', on);
-      more.textContent = on ? 'חזרה לסרטון' : 'המתכון המלא';
-      if (on) bottom.scrollTop = 0;
-    };
-    preview.onclick = () => setReading(true);
-    more.onclick = () => setReading(!layer.classList.contains('reading'));
-    setReading(false);
-    bottom.appendChild(el('div.prow', null, preview, more));
-    extra.appendChild(recipe);
-  } else {
-    layer.classList.add('no-note');
-  }
-  if (!readOnly() && !posterUrls.has(v.id)) extra.appendChild(fixPoster(v, () => { if (!stage.querySelector('video, iframe')) cover(); }));
-  bottom.appendChild(extra);
-
-  layer.append(el('div.player-top', null, el('b', { text: v.title }), full, shut), stage, bottom, exitFull);
-  document.body.appendChild(layer);
-  shut.focus();
-}
-
-/* ההערה כמתכון. מה שמודבק מאינסטגרם הוא טקסט חופשי, ובו בדרך כלל אותם
-   סימנים: שורה קצרה שנגמרת בנקודתיים היא כותרת ("רכיבים:", "לרול:"),
-   שורה שמתחילה ב-* · - • או במספר היא פריט ברשימה, ושורה של "קלוריות: …
-   | חלבון: …" היא ערכים — כל אחד תגית. כל השאר פסקה, כמו שנכתבה. לא ממציאים
-   מבנה: מה שלא מתאים לאף כלל נשאר בדיוק כמו שהוא. */
-const BULLET = /^\s*(?:[*\-•·‣▪●◦]|\d{1,2}[.)])\s+/;
-function formatNote(text) {
-  const box = document.createDocumentFragment();
-  let list = null;
-  String(text).split(/\r?\n/).forEach(raw => {
-    const line = raw.trim();
-    if (!line) { list = null; return; }
-    if (BULLET.test(line)) {
-      if (!list) { list = el(/^\s*\d/.test(line) ? 'ol' : 'ul'); box.appendChild(list); }
-      list.appendChild(el('li', { text: line.replace(BULLET, '') }));
-      return;
-    }
-    list = null;
-    const parts = line.split(/\s*\|\s*/).filter(Boolean);
-    if (parts.length > 1 && parts.filter(p => p.includes(':')).length >= 2) {
-      /* "ערכים תזונתיים לכל המנה: קלוריות: כ-195" — הכותרת לפני הזוג הראשון */
-      const first = parts[0].split(':');
-      const row = el('div.facts-row');
-      if (first.length > 2) { box.appendChild(el('h4', { text: first[0].trim() })); parts[0] = first.slice(1).join(':').trim(); }
-      parts.forEach(p => {
-        const at = p.indexOf(':');
-        row.appendChild(at > 0
-          ? el('span.fact', null, el('small', { text: p.slice(0, at).trim() }), el('b', { text: p.slice(at + 1).trim() }))
-          : el('span.fact', null, el('b', { text: p })));
-      });
-      box.appendChild(row);
-      return;
-    }
-    if (line.length <= 32 && /[:：]$/.test(line)) { box.appendChild(el('h4', { text: line.replace(/[:：]$/, '') })); return; }
-    box.appendChild(el('p', { text: line }));
-  });
-  return box;
+  afterLayers(() => buildPlayer(id, {
+    posterUrls,
+    onEdit: v => openEditor(null, getVideo(v.id)),
+    onChanged: removed => {
+      if (removed) posterUrls.delete(id);
+      paint();
+      syncNow();
+    },
+    fixPoster
+  }));
 }
 
 /* תמונה שלא נשמרה: חיפוש מחדש ביד, מתוך הנגן. ההשלמה ברקע מנסה לבד בכל

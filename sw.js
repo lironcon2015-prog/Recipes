@@ -10,13 +10,13 @@
    שמתחיל ב-"recipes-", וקובץ שחסר במטמון (אפליקציה אחרת מחקה אותו)
    נלקח מהרשת ונשמר שוב, במקום להפיל את האפליקציה. */
 
-const VERSION = '1.0.8';
+const VERSION = '1.0.9';
 const PREFIX = 'recipes-';
 const SHELL = PREFIX + VERSION;
 
 const ASSETS = [
   './', './index.html', './css/app.css', './manifest.webmanifest',
-  './js/app.js', './js/ui.js', './js/version.js', './js/library.js', './js/categories.js', './js/sync.js',
+  './js/app.js', './js/ui.js', './js/version.js', './js/library.js', './js/player.js', './js/categories.js', './js/sync.js',
   './js/videos.js', './js/preview.js', './js/cloud.js', './js/posters.js',
   './fonts/assistant-hebrew.woff2', './fonts/assistant-latin.woff2',
   './fonts/rubik-hebrew.woff2', './fonts/rubik-latin.woff2',

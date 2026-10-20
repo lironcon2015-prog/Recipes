@@ -272,64 +272,100 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .sheet-go { position: sticky; bottom: calc(-1rem - env(safe-area-inset-bottom)); margin: 0 calc(-1 * var(--pad)) calc(-1rem - env(safe-area-inset-bottom)); padding: .7rem var(--pad) calc(1rem + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--surface-solid) 30%); }
 
 /* ── נגן ─────────────────────────────────────────────────────────────── */
-.player { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 60; background: #000; display: flex; flex-direction: column; }
-.player-top { display: flex; align-items: center; gap: .6rem; padding: calc(.8rem + env(safe-area-inset-top)) max(14px, env(safe-area-inset-right, 0px)) .6rem max(14px, env(safe-area-inset-left, 0px)); color: #fff; }
-.player-top b { flex: 1; min-width: 0; font-size: 1rem; line-height: 1.3; }
-.player-top .icon-btn { background: rgba(255, 255, 255, .1); border-color: transparent; color: #fff; }
-/* הנגן ממלא את מה שנשאר (nines: מסגרת 16:9 קבועה דחסה את פקדי אייפון) */
-.stage { position: relative; flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; }
-.stage > video, .stage > iframe { width: 100%; height: 100%; border: 0; display: block; object-fit: contain; background: #000; }
-.stage > iframe.tall { max-width: min(100%, 420px); }
-.stage .cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: .55; }
-.stage .big {
-  position: relative; width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center;
-  border: 1.5px solid rgba(232, 185, 49, .55); color: #fff;
-}
-.stage .big svg { width: 26px; height: 26px; margin-inline-start: -3px; color: var(--gold); }
-.stage .msg { position: absolute; inset: auto 16px 16px; text-align: center; color: #fff; font-size: .88rem; }
-.stage .msg a { color: var(--gold); font-weight: 700; }
-/* מסך מלא: הכותרת והפרטים יורדים, הסרטון ממלא הכול, וכפתור יציאה קטן בפינה */
-.player .exit-full { display: none; position: absolute; z-index: 2; top: calc(12px + env(safe-area-inset-top)); inset-inline-end: calc(12px + env(safe-area-inset-left, 0px));
-  background: rgba(0, 0, 0, .45); border-color: rgba(255, 255, 255, .25); color: #fff; }
-.player.immersive .player-top, .player.immersive .player-bot { display: none; }
+/* ── מסך המתכון (player.js) — כיוון א׳ + 1ג׳ במוקאפ ─────────────────────
+   הסרטון הוא המסך, מקצה לקצה. כל השאר צף עליו: ✕ ⛶ למעלה, הכיתוב למטה
+   על הצללה, הפעולות בעמודה בצד. "המתכון" מעלה גיליון והסרטון מתכווץ מעליו. */
+.player { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 60; background: #000; overflow: hidden; color: #fff; }
+.stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; transition: height .26s cubic-bezier(.25, .8, .3, 1); }
+/* סרטון לאורך ממלא את המסך; סרטון לרוחב (wide) נשאר שלם */
+.stage > video { width: 100%; height: 100%; object-fit: cover; display: block; background: #000; }
+.stage > video.wide { object-fit: contain; }
+.stage > iframe { width: 100%; height: 100%; border: 0; display: block; background: #000; }
+.stage > iframe.tall { max-width: min(100%, 460px); }
+.stage .cover { position: absolute; inset: 0; }
+.stage .cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cta { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: .6rem; z-index: 1; }
+.bigp { width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; color: var(--gold); border: 1.5px solid var(--gold-line);
+  background: rgba(10, 16, 28, .55); box-shadow: 0 0 40px 14px rgba(10, 16, 28, .3); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.bigp svg { width: 24px; height: 24px; margin-inline-start: -3px; }
+.bigp.busy svg { animation: spin 1s linear infinite; }
+.cta .out { display: inline-flex; align-items: center; gap: .35rem; padding: .25rem .8rem; border-radius: 999px; font-size: .82rem; font-weight: 700; color: #fff; text-decoration: none;
+  background: rgba(10, 16, 28, .6); border: 1px solid rgba(255, 255, 255, .2); }
+.cta .out svg { width: 13px; height: 13px; }
+.player.paused .stage::after { content: ""; position: absolute; left: 50%; top: 46%; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%;
+  background: rgba(10, 16, 28, .55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 4v16l13-8z' fill='%23E8B931'/%3E%3C/svg%3E") 54% 50% / 24px no-repeat;
+  border: 1.5px solid var(--gold-line); pointer-events: none; }
+.scrim-t { position: absolute; inset: 0 0 auto; height: calc(110px + env(safe-area-inset-top)); background: linear-gradient(rgba(0, 0, 0, .5), transparent); pointer-events: none; }
+.scrim-b { position: absolute; inset: auto 0 0; height: 55%; background: linear-gradient(transparent, rgba(0, 0, 0, .5) 40%, rgba(0, 0, 0, .86)); pointer-events: none; }
+.ibtn { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; color: #fff; text-decoration: none;
+  background: rgba(10, 16, 28, .45); border: 1px solid rgba(255, 255, 255, .2); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.ibtn svg { width: 18px; height: 18px; }
+.topov { position: absolute; z-index: 3; top: calc(12px + env(safe-area-inset-top)); inset-inline: max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-left, 0px)); display: flex; justify-content: flex-end; gap: .5rem; }
+.cap { position: absolute; z-index: 3; inset-inline-start: max(16px, env(safe-area-inset-right, 0px)); inset-inline-end: 76px; bottom: calc(26px + env(safe-area-inset-bottom)); }
+.cap .chip { height: 26px; font-size: .78rem; padding: 0 .7rem; }
+.cap h2 { margin: .45rem 0 .25rem; font-size: 1.2rem; line-height: 1.25; color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, .4); }
+/* שתי שורות, ב-div: באייפון הקיצור לא עובד על כפתור */
+.cap .sum { font-size: .9rem; line-height: 1.45; color: rgba(255, 255, 255, .9); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
+.cap .more { margin-top: .5rem; display: inline-flex; align-items: center; gap: .3rem; border: 0; background: none; padding: .1rem 0; color: var(--gold); font-weight: 800; font-size: .92rem; }
+.cap .more svg { width: 14px; height: 14px; }
+.rail { position: absolute; z-index: 3; inset-inline-end: max(10px, env(safe-area-inset-left, 0px)); bottom: calc(30px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .9rem; align-items: center; }
+.rail .rb { display: grid; justify-items: center; gap: 3px; font-size: .66rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
+.rail .ibtn { width: 44px; height: 44px; }
+.progress { position: absolute; z-index: 3; inset-inline: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, .2); }
+.progress i { display: block; width: 0; height: 100%; background: var(--gold); }
+/* מסך מלא: כל מה שצף יורד, וכפתור יציאה קטן בפינה */
+.player .exit-full { display: none; position: absolute; z-index: 4; top: calc(12px + env(safe-area-inset-top)); inset-inline-end: calc(12px + env(safe-area-inset-left, 0px)); }
+.player.immersive .topov, .player.immersive .cap, .player.immersive .rail, .player.immersive .scrim-b, .player.immersive .scrim-t { display: none; }
 .player.immersive .exit-full { display: grid; }
-.player.immersive .stage > iframe.tall { max-width: 100%; }
-.player-bot { flex: none; background: var(--surface-solid); border-top: 1px solid var(--line); padding: .55rem var(--pad) calc(.6rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .45rem; }
-/* בעמודה נגללת, ילד עם overflow:hidden מתכווץ במקום לגלול — ולכן המתכון נחתך באמצע */
-.player-bot > * { flex-shrink: 0; }
-.pbar { display: flex; align-items: center; gap: .4rem; }
-.pbar .tags { flex: 1; min-width: 0; display: flex; align-items: center; gap: .45rem; font-size: .78rem; color: var(--faint); white-space: nowrap; overflow: hidden; }
-.pbar .tags .chip { height: 26px; font-size: .76rem; padding: 0 .65rem; }
-.pbar .btn.sm { height: 36px; padding: 0 .7rem; font-size: .82rem; }
-.pbar .btn.icon.sm { width: 36px; padding: 0; }
-.prow { display: flex; align-items: flex-end; gap: .7rem; }
-/* שתי שורות מההערה, כמו שנכתבה. לחיצה פותחת את המתכון המלא */
-.preview { flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: start; color: var(--text); font-size: .9rem; line-height: 1.45;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.player-bot .more { flex: none; border: 0; background: none; padding: .1rem 0; color: var(--gold); font-weight: 700; font-size: .86rem; white-space: nowrap; }
-/* המתכון במבנה ותמונה חסרה — רק במצב "המתכון המלא" (או כשאין הערה בכלל) */
-.pextra { display: none; flex-direction: column; gap: .7rem; }
-.player.reading .pextra, .player.no-note .pextra { display: flex; }
-.player.no-note .pextra:empty { display: none; }
-.player.reading .preview { display: none; }
-.player.reading .prow { justify-content: flex-start; }
-.recipe { font-size: .95rem; line-height: 1.55; color: var(--text); }
-.recipe > :first-child { margin-top: 0; }
-.recipe p { margin: 0 0 .35rem; overflow-wrap: anywhere; }
-.recipe h4 { margin: .7rem 0 .3rem; font-size: .9rem; font-weight: 800; color: var(--gold); }
-.recipe ul, .recipe ol { margin: 0 0 .4rem; padding-inline-start: 1.2rem; display: grid; gap: .2rem; }
-.recipe li::marker { color: var(--gold); }
-.facts-row { display: flex; flex-wrap: wrap; gap: .35rem; margin: .1rem 0 .5rem; }
-.fact { display: inline-flex; align-items: baseline; gap: .3rem; padding: .2rem .6rem; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font-size: .82rem; }
-.fact small { color: var(--muted); }
-.fact b { font-weight: 700; }
-/* "המתכון המלא": הסרטון מתכווץ לשליש העליון וממשיך לנגן, וההערה נגללת בשאר */
-.player.reading .stage { flex: 0 0 34%; }
-.player.reading .player-bot { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+
+/* גיליון המתכון: הסרטון מתכווץ לחלק העליון וממשיך לנגן */
+.player.reading .stage { height: 42%; bottom: auto; }
+.player.reading-full .stage { height: 22%; }
+.player.reading .cap, .player.reading .rail, .player.reading .scrim-b, .player.reading .progress { display: none; }
+.rsheet { position: absolute; z-index: 4; inset-inline: 0; bottom: 0; top: 39%; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--surface-solid); color: var(--text); border-radius: 22px 22px 0 0; border-top: 1px solid var(--line-strong);
+  padding: 0 var(--pad) calc(1.2rem + env(safe-area-inset-bottom)); transform: translateY(100%); transition: transform .26s cubic-bezier(.25, .8, .3, 1), top .26s cubic-bezier(.25, .8, .3, 1); }
+.rsheet > * { flex-shrink: 0; }
+.rsheet.on { transform: none; }
+.rsheet.going { transform: translateY(100%); }
+.player.reading-full .rsheet { top: 19%; }
+.grab-zone { padding: .55rem 0 .6rem; touch-action: none; cursor: grab; position: sticky; top: 0; background: var(--surface-solid); z-index: 1; }
+.grab { width: 40px; height: 4px; border-radius: 4px; background: var(--line-strong); margin: 0 auto; }
+.sh-head { display: flex; align-items: flex-start; gap: .5rem; touch-action: none; }
+.sh-head h3 { flex: 1; margin: 0; font-size: 1.15rem; line-height: 1.25; }
+.ibtn.flat { width: 34px; height: 34px; background: var(--surface-2); border-color: var(--line); color: var(--muted); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.rsheet .meta { font-size: .78rem; color: var(--faint); margin: .25rem 0 .8rem; }
+.nut { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; margin-bottom: .3rem; }
+.nut > div { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: .4rem .2rem; text-align: center; min-width: 0; }
+.nut b { display: block; font-size: 1.02rem; font-weight: 700; line-height: 1.2; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nut small { font-size: .66rem; color: var(--faint); }
+.nut > div.k b { color: var(--gold); }
+.rbody .grp { font-size: .82rem; font-weight: 800; color: var(--gold); margin: .9rem 0 .2rem; }
+.rbody .rp { margin: .3rem 0; font-size: .92rem; color: var(--muted); overflow-wrap: anywhere; }
+.ing { display: flex; align-items: center; gap: .65rem; width: 100%; padding: .55rem 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: start; color: var(--text); font-size: .95rem; line-height: 1.35; }
+.ing i { width: 20px; height: 20px; flex: none; border-radius: 6px; border: 1.5px solid var(--line-strong); display: grid; place-items: center; }
+.ing b { font-weight: 600; }
+.ing[aria-pressed="true"] { color: var(--faint); }
+.ing[aria-pressed="true"] span { text-decoration: line-through; }
+.ing[aria-pressed="true"] i { border-color: var(--gold);
+  /* סימן ✓ כתמונה ולא כמסגרת מסובבת: בעברית הכיוון של המסגרת מתהפך, והסימן יצא "<" */
+  background: var(--gold) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='m5 12 5 5 9-10' fill='none' stroke='%231A1204' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 14px no-repeat; }
+ol.steps { margin: .5rem 0; padding-inline-start: 1.3rem; display: grid; gap: .5rem; font-size: .95rem; }
+ol.steps li::marker { color: var(--gold); font-family: Rubik, sans-serif; font-weight: 700; }
+.uncheck { margin-top: .9rem; align-self: flex-start; border: 0; background: none; padding: 0; color: var(--faint); font-size: .82rem; text-decoration: underline dotted; text-underline-offset: 3px; }
+
+/* ⋯ — תפריט פעולות, כמו בכל אפליקציה בטלפון. המחיקה בקבוצה משלה, למטה */
+.mdim { position: absolute; inset: 0; z-index: 5; background: rgba(3, 6, 12, .55); }
+.amenu { position: absolute; z-index: 6; inset-inline: max(10px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom)); display: grid; gap: .5rem; max-width: var(--shell); margin: 0 auto; }
+.mgrp { background: rgba(28, 38, 56, .97); border-radius: 18px; overflow: hidden; border: 1px solid var(--line); }
+.mgrp .it { display: flex; align-items: center; gap: .7rem; width: 100%; padding: .85rem 1rem; border: 0; border-bottom: 1px solid var(--line); background: none; color: var(--text); font-size: .95rem; font-weight: 600; text-align: start; text-decoration: none; }
+.mgrp .it:last-child { border-bottom: 0; }
+.mgrp .it svg { width: 18px; height: 18px; color: var(--muted); }
+.mgrp .it.del, .mgrp .it.del svg { color: var(--gold); }
+.mgrp .it.del.sure { background: var(--gold-soft); }
+.mgrp .it.plain { display: block; }
+.mcancel { padding: .85rem; border-radius: 18px; border: 1px solid var(--line); background: rgba(28, 38, 56, .97); color: var(--text); font-weight: 800; font-size: .95rem; }
 textarea.note-in { min-height: 110px; }
-.acts { display: flex; gap: .5rem; }
-.acts .btn { flex: 1; min-width: 0; }
-.acts .btn.icon { flex: none; width: 44px; padding: 0; }
 .fixposter { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; font-size: .86rem; color: var(--muted); }
 .fixposter > span { flex: 1; min-width: 12ch; }
 .fixposter .btn.sm { width: auto; }
