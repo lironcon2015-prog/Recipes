@@ -7,10 +7,9 @@
    · "המתכון" מעלה גיליון: ערכים בארבע משבצות, רכיבים לפי קבוצה עם סימון
      (נשמר במכשיר), שלבים אם יש. הסרטון ממשיך לנגן מעליו.
    · בלי מתג "רכיבים | הכנה" (בעל הריפו).
-   · 1ג׳: באינסטגרם, בפייסבוק ובטיקטוק מנגנים את קובץ הווידאו עצמו. כשאין
-     קובץ — לא מציגים את הנגן של אינסטגרם (כותרת, לייקים, דף לבן): התמונה
-     נשארת, ו-▶ פותח את הסרטון באינסטגרם. את מה שבתוך הנגן שלהם אי אפשר
-     לראות מבחוץ, ולכן גם אי אפשר "לחתוך" אותו בביטחון (1ב׳ נדחה).
+   · באינסטגרם, בפייסבוק ובטיקטוק מנגנים את קובץ הווידאו עצמו. כשאין קובץ —
+     הנגן שלהם, בתוך האפליקציה (1.0.12; ב-1ג׳ ▶ יצא לאינסטגרם, וזה קרה כמעט
+     תמיד). רק כשאין גם נגן — ▶ פותח את הסרטון אצלם.
 
    הנגינה, התמונות והקישור עצמו — videos.js ו-preview.js, כמו קודם. */
 
@@ -159,7 +158,12 @@ export function buildPlayer(id, ctx) {
   if (!v) return;
   const name = platformName(v.platform);
   const owner = !readOnly();
-  const embed = CHROME.has(v.platform) ? null : embedUrl(playable(v));
+  /* באינסטגרם ובחבריה הנגן שלהם הוא רק נפילה, כשאין קובץ — אבל נפילה בתוך
+     האפליקציה. 1ג׳ (▶ פותח את אינסטגרם) הוציא מהאפליקציה כמעט כל סרטון
+     אינסטגרם, כי את הקובץ שלהם רוב הזמן לא מוצאים (בעל הריפו: "לחיצה על
+     כפתור ההפעלה מובילה לאינסטגרם"). */
+  const fallback = embedUrl(playable(v));
+  const embed = CHROME.has(v.platform) ? null : fallback;
   const canFetch = FETCHABLE.has(v.platform);
 
   const layer = el('div.player', { role: 'dialog', 'aria-modal': 'true', 'aria-label': v.title });
@@ -183,14 +187,14 @@ export function buildPlayer(id, ctx) {
   let pending = null;
   const resolve = () => {
     if (mode || pending) return pending;
-    if (!canFetch) { mode = 'out'; return null; }
+    if (!canFetch) { mode = fallback ? 'embed' : 'out'; return null; }
     pending = refreshMedia(v.url).then(got => {
       pending = null;
       if (got.media) {
         if (owner) updateVideo(v.id, { media: got.media });
         v.media = got.media; v.mediaAt = Date.now();
         mode = 'file';
-      } else mode = 'out';
+      } else mode = fallback ? 'embed' : 'out';
       paintCover();
     });
     return pending;
@@ -250,6 +254,9 @@ export function buildPlayer(id, ctx) {
     video.play().catch(() => layer.classList.add('paused'));
   };
   const toVideoOut = () => {
+    if (video) { video.remove(); video = null; }
+    progress.hidden = true;
+    if (fallback) { mode = 'embed'; playEmbed(fallback); paintRail(); return; }
     mode = 'out';
     if (video) { video.remove(); video = null; }
     stage.textContent = '';
@@ -275,7 +282,7 @@ export function buildPlayer(id, ctx) {
       if (mode === 'out') return;
     }
     if (mode === 'file') playFile(v.media);
-    else if (mode === 'embed') playEmbed(embed);
+    else if (mode === 'embed') playEmbed(embed || fallback);
   };
   /* נגיעה בסרטון שמתנגן עוצרת וממשיכה — כמו ברילס */
   stage.addEventListener('click', e => {
