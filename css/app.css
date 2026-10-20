@@ -294,12 +294,26 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .player.immersive .player-top, .player.immersive .player-bot { display: none; }
 .player.immersive .exit-full { display: grid; }
 .player.immersive .stage > iframe.tall { max-width: 100%; }
-.player-bot { background: var(--surface-solid); border-top: 1px solid var(--line); padding: .8rem var(--pad) calc(1rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .7rem; }
-.player-bot .tags { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .78rem; color: var(--faint); }
-.player-bot .tags .chip { height: 26px; font-size: .76rem; padding: 0 .65rem; }
-/* ההערה כמתכון: טקסט מלא, כותרות, רשימות ותגיות ערכים. מקוצרת עד "המתכון המלא" */
-.recipe { max-height: 7.2em; overflow: hidden; position: relative; font-size: .95rem; line-height: 1.55; color: var(--text);
-  -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.player-bot { flex: none; background: var(--surface-solid); border-top: 1px solid var(--line); padding: .55rem var(--pad) calc(.6rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .45rem; }
+/* בעמודה נגללת, ילד עם overflow:hidden מתכווץ במקום לגלול — ולכן המתכון נחתך באמצע */
+.player-bot > * { flex-shrink: 0; }
+.pbar { display: flex; align-items: center; gap: .4rem; }
+.pbar .tags { flex: 1; min-width: 0; display: flex; align-items: center; gap: .45rem; font-size: .78rem; color: var(--faint); white-space: nowrap; overflow: hidden; }
+.pbar .tags .chip { height: 26px; font-size: .76rem; padding: 0 .65rem; }
+.pbar .btn.sm { height: 36px; padding: 0 .7rem; font-size: .82rem; }
+.pbar .btn.icon.sm { width: 36px; padding: 0; }
+.prow { display: flex; align-items: flex-end; gap: .7rem; }
+/* שתי שורות מההערה, כמו שנכתבה. לחיצה פותחת את המתכון המלא */
+.preview { flex: 1; min-width: 0; border: 0; background: none; padding: 0; text-align: start; color: var(--text); font-size: .9rem; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.player-bot .more { flex: none; border: 0; background: none; padding: .1rem 0; color: var(--gold); font-weight: 700; font-size: .86rem; white-space: nowrap; }
+/* המתכון במבנה ותמונה חסרה — רק במצב "המתכון המלא" (או כשאין הערה בכלל) */
+.pextra { display: none; flex-direction: column; gap: .7rem; }
+.player.reading .pextra, .player.no-note .pextra { display: flex; }
+.player.no-note .pextra:empty { display: none; }
+.player.reading .preview { display: none; }
+.player.reading .prow { justify-content: flex-start; }
+.recipe { font-size: .95rem; line-height: 1.55; color: var(--text); }
 .recipe > :first-child { margin-top: 0; }
 .recipe p { margin: 0 0 .35rem; overflow-wrap: anywhere; }
 .recipe h4 { margin: .7rem 0 .3rem; font-size: .9rem; font-weight: 800; color: var(--gold); }
@@ -309,13 +323,9 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .fact { display: inline-flex; align-items: baseline; gap: .3rem; padding: .2rem .6rem; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font-size: .82rem; }
 .fact small { color: var(--muted); }
 .fact b { font-weight: 700; }
-.player-bot .more { align-self: flex-start; border: 0; background: none; padding: .1rem 0; color: var(--gold); font-weight: 700; font-size: .88rem; }
 /* "המתכון המלא": הסרטון מתכווץ לשליש העליון וממשיך לנגן, וההערה נגללת בשאר */
 .player.reading .stage { flex: 0 0 34%; }
 .player.reading .player-bot { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.player.reading .recipe { max-height: none; -webkit-mask-image: none; mask-image: none; }
-/* בעמודה נגללת, ילד עם overflow:hidden מתכווץ במקום לגלול — ולכן המתכון נחתך באמצע */
-.player-bot > * { flex-shrink: 0; }
 textarea.note-in { min-height: 110px; }
 .acts { display: flex; gap: .5rem; }
 .acts .btn { flex: 1; min-width: 0; }

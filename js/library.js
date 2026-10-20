@@ -549,7 +549,6 @@ function buildPlayer(id) {
   shut.onclick = close;
   offKey = onEscape(() => (immersive ? leaveFull() : close()));
 
-  const openOut = el('a.btn', { href: v.url, target: '_blank', rel: 'noopener noreferrer' }, icon('ext'), 'פתיחה ב' + name);
 
   const msg = text => {
     const m = el('p.msg', null, text + ' ');
@@ -643,47 +642,56 @@ function buildPlayer(id) {
 
   cover();
 
+  /* הפאנל שמתחת לסרטון — נמוך ככל האפשר (בעל הריפו: "גבוה מדי, מסתיר את
+     הסרטון"): שורה אחת של קטגוריה ופעולות, ושתי שורות מההערה. כל השאר —
+     המתכון המלא, תמונה חסרה — רק כשמבקשים ("המתכון המלא"). */
   const bottom = el('div.player-bot');
   const tags = el('div.tags');
   if (v.category && categoryName(v.category)) tags.appendChild(el('span.chip', { 'aria-pressed': 'true', text: categoryName(v.category) }));
-  tags.append(name + ' · נשמר ' + whenText(v.at));
-  bottom.appendChild(tags);
-  if (v.note) {
-    /* ההערה היא המתכון עצמו — רכיבים, ערכים, שלבים — ולא שורה אחת. מוצגת
-       בטקסט מלא ולא אפור, במבנה (formatNote), ובקיצור עד "המתכון המלא":
-       אז הסרטון מתכווץ למעלה וההערה מקבלת את רוב המסך, כדי שאפשר יהיה
-       לקרוא ולצפות ביחד. */
-    const recipe = el('div.recipe', null, formatNote(v.note));
-    const more = el('button.more', { type: 'button', hidden: true });
-    const setReading = on => {
-      layer.classList.toggle('reading', on);
-      more.textContent = on ? 'חזרה לסרטון' : 'המתכון המלא';
-    };
-    more.onclick = () => setReading(!layer.classList.contains('reading'));
-    setReading(false);
-    bottom.append(recipe, more);
-    /* הכפתור רק כשבאמת יש עוד — נמדד אחרי שהשכבה על המסך */
-    requestAnimationFrame(() => { more.hidden = recipe.scrollHeight <= recipe.clientHeight + 4; });
-  }
-  if (!readOnly() && !posterUrls.has(v.id)) bottom.appendChild(fixPoster(v, () => { if (!stage.querySelector('video, iframe')) cover(); }));
-  const acts = el('div.acts', null, openOut);
+  tags.append(whenText(v.at));
+  const openOut = el('a.btn.sm', { href: v.url, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'פתיחה ב' + name }, icon('ext'), name);
+  const bar = el('div.pbar', null, tags, openOut);
   if (!readOnly()) {
-    const edit = el('button.btn.icon', { type: 'button', 'aria-label': 'עריכה', onclick: () => { close(); openEditor(null, getVideo(v.id)); } }, icon('pen'));
-    const del = el('button.btn.icon', { type: 'button', 'aria-label': 'מחיקה' }, icon('trash'));
+    const edit = el('button.btn.icon.sm', { type: 'button', 'aria-label': 'עריכה', onclick: () => { close(); openEditor(null, getVideo(v.id)); } }, icon('pen'));
+    const del = el('button.btn.icon.sm', { type: 'button', 'aria-label': 'מחיקה' }, icon('trash'));
     del.onclick = () => {
-      acts.hidden = true;
-      bottom.appendChild(confirmBox('למחוק את "' + v.title + '"?', 'מחיקה', () => {
+      bar.hidden = true;
+      bottom.insertBefore(confirmBox('למחוק את "' + v.title + '"?', 'מחיקה', () => {
         removeVideo(v.id);
         posterUrls.delete(v.id);
         close();
         paint();
         toast('נמחק');
         syncNow();
-      }, () => { acts.hidden = false; }));
+      }, () => { bar.hidden = false; }), bar.nextSibling);
     };
-    acts.append(edit, del);
+    bar.append(edit, del);
   }
-  bottom.appendChild(acts);
+  bottom.appendChild(bar);
+
+  const extra = el('div.pextra');
+  if (v.note) {
+    /* ההערה היא המתכון עצמו — רכיבים, ערכים, שלבים. בקיצור: שתי שורות של
+       הטקסט כמו שהוא. "המתכון המלא": הסרטון מתכווץ לשליש העליון וממשיך
+       לנגן, והמתכון במבנה (formatNote) נגלל בשאר המסך. */
+    const preview = el('button.preview', { type: 'button', text: v.note.split(/\r?\n/).map(l => l.trim()).filter(Boolean).join(' · ') });
+    const recipe = el('div.recipe', null, formatNote(v.note));
+    const more = el('button.more', { type: 'button' });
+    const setReading = on => {
+      layer.classList.toggle('reading', on);
+      more.textContent = on ? 'חזרה לסרטון' : 'המתכון המלא';
+      if (on) bottom.scrollTop = 0;
+    };
+    preview.onclick = () => setReading(true);
+    more.onclick = () => setReading(!layer.classList.contains('reading'));
+    setReading(false);
+    bottom.appendChild(el('div.prow', null, preview, more));
+    extra.appendChild(recipe);
+  } else {
+    layer.classList.add('no-note');
+  }
+  if (!readOnly() && !posterUrls.has(v.id)) extra.appendChild(fixPoster(v, () => { if (!stage.querySelector('video, iframe')) cover(); }));
+  bottom.appendChild(extra);
 
   layer.append(el('div.player-top', null, el('b', { text: v.title }), full, shut), stage, bottom, exitFull);
   document.body.appendChild(layer);
