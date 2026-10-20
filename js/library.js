@@ -581,38 +581,50 @@ async function loadPosterUrls() {
   return saved;
 }
 
-/** מביאה תמונה, מקטינה ושומרת. true אם באמת נשמרה. */
+/** מביאה תמונה, מקטינה ושומרת. true אם באמת נשמרה.
+
+    הטלפון והסקריפט מביאים אותה ביחד, והראשון שמצליח קובע — הסקריפט
+    מתעורר לאט ואינסטגרם חוסמת שרתים, ואין סיבה שהכרטיס יחכה לו. מה
+    שהטלפון הביא עולה לתיקייה ברקע (cloudCopy). כמו ב-nines. */
 async function savePoster(id, src, log) {
   if (!src) return false;
-  /* כשיש סקריפט, הוא מושך ושומר בתיקייה באותה פנייה */
-  if (cloud.isOn() && !cloud.isViewer()) {
-    try {
-      const got = await cloud.grabPoster(id, src);
-      if (got && got.blob) {
-        const small = await posters.shrink(got.blob);
-        if (small && await posters.put(id, small)) {
-          updateVideo(id, { posterKind: 'blob', posterUrl: src, posterRef: got.ref });
-          return true;
-        }
-      }
-    } catch (e) {
-      if (log) log.push('תמונה · הסקריפט נכשל');
-    }
-  }
-  const blob = await fetchPoster(src, log);
-  const small = blob ? await posters.shrink(blob) : null;
+  const owner = cloud.isOn() && !cloud.isViewer();
+  const byScript = owner
+    ? cloud.grabPoster(id, src).catch(() => { if (log) log.push('תמונה · הסקריפט נכשל'); return null; })
+    : Promise.resolve(null);
+  const byPhone = fetchPoster(src, log);
+  const got = await firstOf([
+    byPhone.then(blob => (blob ? { blob, ref: null } : null)),
+    byScript.then(g => (g && g.blob ? { blob: g.blob, ref: g.ref || null } : null))
+  ]);
+  const small = got ? await posters.shrink(got.blob) : null;
   if (small && await posters.put(id, small)) {
-    /* הטלפון הצליח במקום שהסקריפט נכשל (אינסטגרם חוסמת שרתים, לא
-       דפדפנים) — מעלים לתיקייה מיד, אחרת המכשיר השני רואה כרטיס ריק */
-    let ref = null;
-    if (cloud.isOn() && !cloud.isViewer()) {
-      try { ref = await cloud.putPoster(id, small); } catch (e) { /* תעלה בהשלמה הבאה */ }
-    }
-    if (!readOnly()) updateVideo(id, { posterKind: 'blob', posterUrl: src, posterRef: ref || undefined });
+    if (!readOnly()) updateVideo(id, { posterKind: 'blob', posterUrl: src, posterRef: got.ref || undefined });
+    if (owner && !got.ref) cloudCopy(id, byScript, small);
     return true;
   }
   if (!readOnly()) updateVideo(id, { posterUrl: src });
   return false;
+}
+
+/** הראשון שמחזיר משהו, או null כשכולם החזירו null */
+function firstOf(list) {
+  return new Promise(resolve => {
+    let left = list.length;
+    list.forEach(p => p.then(value => {
+      if (value) resolve(value);
+      else if (!--left) resolve(null);
+    }));
+  });
+}
+
+/* העותק בתיקייה, אחרי שהכרטיס כבר מוצג. נכשל? needsUpload יעלה בפתיחה הבאה. */
+async function cloudCopy(id, byScript, blob) {
+  try {
+    const g = await byScript;
+    const ref = (g && g.ref) || await cloud.putPoster(id, blob);
+    if (ref && !readOnly()) { updateVideo(id, { posterRef: ref }); syncNow(); }
+  } catch (e) { /* יעלה בהשלמה הבאה */ }
 }
 
 /* השלמת תמונות חסרות ברקע — מעט בכל פתיחה, לא הכול בבת אחת. הורדה
