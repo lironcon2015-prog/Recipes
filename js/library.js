@@ -309,7 +309,11 @@ function buildEditor(prefill, video) {
     const preview = el('div', { hidden: true });
     const title = el('input.inp', { type: 'text', id: 'f-title', placeholder: 'השם נמשך מהקישור — אפשר לשנות', value: video ? video.title : ((prefill && prefill.title) || '') });
     if (prefill && prefill.title) titleTouched = true;
-    const note = el('textarea.inp', { id: 'f-note', rows: 3, placeholder: 'למה שמרתי, מה לשנות, כמה זמן בתנור' });
+    const note = el('textarea.inp.note-in', { id: 'f-note', rows: 4, placeholder: 'אפשר להדביק את כל המתכון — רכיבים, ערכים ושלבים. שורה שנגמרת בנקודתיים תהיה כותרת, ושורה שמתחילה ב-* תהיה פריט ברשימה.' });
+    /* השדה גדל עם הטקסט, עד חצי מסך — מתכון שלם לא נכנס בשלוש שורות */
+    const grow = () => { note.style.height = 'auto'; note.style.height = Math.min(note.scrollHeight + 2, innerHeight * .5) + 'px'; };
+    note.addEventListener('input', grow);
+    setTimeout(grow, 300);
     note.value = video ? video.note : '';
     const pick = el('div.pick');
     const newCat = el('input.inp', { type: 'text', id: 'f-newcat', placeholder: 'שם הקטגוריה החדשה', hidden: true });
@@ -434,7 +438,7 @@ function buildEditor(prefill, video) {
       el('label.field', null, el('span', { text: 'שם' }), title),
       el('div.field', null, el('span', { text: 'קטגוריה' }), pick),
       newCat,
-      el('label.field', null, el('span', { text: 'הערה (לא חובה)' }), note),
+      el('label.field', null, el('span', { text: 'הערה או המתכון (לא חובה)' }), note),
       err,
       el('div.sheet-go', null, save)
     );
@@ -644,7 +648,23 @@ function buildPlayer(id) {
   if (v.category && categoryName(v.category)) tags.appendChild(el('span.chip', { 'aria-pressed': 'true', text: categoryName(v.category) }));
   tags.append(name + ' · נשמר ' + whenText(v.at));
   bottom.appendChild(tags);
-  if (v.note) bottom.appendChild(el('p.note', { text: v.note }));
+  if (v.note) {
+    /* ההערה היא המתכון עצמו — רכיבים, ערכים, שלבים — ולא שורה אחת. מוצגת
+       בטקסט מלא ולא אפור, במבנה (formatNote), ובקיצור עד "המתכון המלא":
+       אז הסרטון מתכווץ למעלה וההערה מקבלת את רוב המסך, כדי שאפשר יהיה
+       לקרוא ולצפות ביחד. */
+    const recipe = el('div.recipe', null, formatNote(v.note));
+    const more = el('button.more', { type: 'button', hidden: true });
+    const setReading = on => {
+      layer.classList.toggle('reading', on);
+      more.textContent = on ? 'חזרה לסרטון' : 'המתכון המלא';
+    };
+    more.onclick = () => setReading(!layer.classList.contains('reading'));
+    setReading(false);
+    bottom.append(recipe, more);
+    /* הכפתור רק כשבאמת יש עוד — נמדד אחרי שהשכבה על המסך */
+    requestAnimationFrame(() => { more.hidden = recipe.scrollHeight <= recipe.clientHeight + 4; });
+  }
   if (!readOnly() && !posterUrls.has(v.id)) bottom.appendChild(fixPoster(v, () => { if (!stage.querySelector('video, iframe')) cover(); }));
   const acts = el('div.acts', null, openOut);
   if (!readOnly()) {
@@ -668,6 +688,45 @@ function buildPlayer(id) {
   layer.append(el('div.player-top', null, el('b', { text: v.title }), full, shut), stage, bottom, exitFull);
   document.body.appendChild(layer);
   shut.focus();
+}
+
+/* ההערה כמתכון. מה שמודבק מאינסטגרם הוא טקסט חופשי, ובו בדרך כלל אותם
+   סימנים: שורה קצרה שנגמרת בנקודתיים היא כותרת ("רכיבים:", "לרול:"),
+   שורה שמתחילה ב-* · - • או במספר היא פריט ברשימה, ושורה של "קלוריות: …
+   | חלבון: …" היא ערכים — כל אחד תגית. כל השאר פסקה, כמו שנכתבה. לא ממציאים
+   מבנה: מה שלא מתאים לאף כלל נשאר בדיוק כמו שהוא. */
+const BULLET = /^\s*(?:[*\-•·‣▪●◦]|\d{1,2}[.)])\s+/;
+function formatNote(text) {
+  const box = document.createDocumentFragment();
+  let list = null;
+  String(text).split(/\r?\n/).forEach(raw => {
+    const line = raw.trim();
+    if (!line) { list = null; return; }
+    if (BULLET.test(line)) {
+      if (!list) { list = el(/^\s*\d/.test(line) ? 'ol' : 'ul'); box.appendChild(list); }
+      list.appendChild(el('li', { text: line.replace(BULLET, '') }));
+      return;
+    }
+    list = null;
+    const parts = line.split(/\s*\|\s*/).filter(Boolean);
+    if (parts.length > 1 && parts.filter(p => p.includes(':')).length >= 2) {
+      /* "ערכים תזונתיים לכל המנה: קלוריות: כ-195" — הכותרת לפני הזוג הראשון */
+      const first = parts[0].split(':');
+      const row = el('div.facts-row');
+      if (first.length > 2) { box.appendChild(el('h4', { text: first[0].trim() })); parts[0] = first.slice(1).join(':').trim(); }
+      parts.forEach(p => {
+        const at = p.indexOf(':');
+        row.appendChild(at > 0
+          ? el('span.fact', null, el('small', { text: p.slice(0, at).trim() }), el('b', { text: p.slice(at + 1).trim() }))
+          : el('span.fact', null, el('b', { text: p })));
+      });
+      box.appendChild(row);
+      return;
+    }
+    if (line.length <= 32 && /[:：]$/.test(line)) { box.appendChild(el('h4', { text: line.replace(/[:：]$/, '') })); return; }
+    box.appendChild(el('p', { text: line }));
+  });
+  return box;
 }
 
 /* תמונה שלא נשמרה: חיפוש מחדש ביד, מתוך הנגן. ההשלמה ברקע מנסה לבד בכל

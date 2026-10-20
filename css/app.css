@@ -272,7 +272,7 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .sheet-go { position: sticky; bottom: calc(-1rem - env(safe-area-inset-bottom)); margin: 0 calc(-1 * var(--pad)) calc(-1rem - env(safe-area-inset-bottom)); padding: .7rem var(--pad) calc(1rem + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--surface-solid) 30%); }
 
 /* ── נגן ─────────────────────────────────────────────────────────────── */
-.player { position: fixed; inset: 0; z-index: 60; background: #000; display: flex; flex-direction: column; }
+.player { position: fixed; inset: 0; height: 100vh; height: 100dvh; z-index: 60; background: #000; display: flex; flex-direction: column; }
 .player-top { display: flex; align-items: center; gap: .6rem; padding: calc(.8rem + env(safe-area-inset-top)) max(14px, env(safe-area-inset-right, 0px)) .6rem max(14px, env(safe-area-inset-left, 0px)); color: #fff; }
 .player-top b { flex: 1; min-width: 0; font-size: 1rem; line-height: 1.3; }
 .player-top .icon-btn { background: rgba(255, 255, 255, .1); border-color: transparent; color: #fff; }
@@ -297,8 +297,26 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .player-bot { background: var(--surface-solid); border-top: 1px solid var(--line); padding: .8rem var(--pad) calc(1rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .7rem; }
 .player-bot .tags { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .78rem; color: var(--faint); }
 .player-bot .tags .chip { height: 26px; font-size: .76rem; padding: 0 .65rem; }
-.player-bot .note { margin: 0; font-size: .9rem; color: var(--muted); white-space: pre-wrap; max-height: 7.5em; overflow-y: auto; }
-.player-bot .note b { color: var(--text); }
+/* ההערה כמתכון: טקסט מלא, כותרות, רשימות ותגיות ערכים. מקוצרת עד "המתכון המלא" */
+.recipe { max-height: 7.2em; overflow: hidden; position: relative; font-size: .95rem; line-height: 1.55; color: var(--text);
+  -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.recipe > :first-child { margin-top: 0; }
+.recipe p { margin: 0 0 .35rem; overflow-wrap: anywhere; }
+.recipe h4 { margin: .7rem 0 .3rem; font-size: .9rem; font-weight: 800; color: var(--gold); }
+.recipe ul, .recipe ol { margin: 0 0 .4rem; padding-inline-start: 1.2rem; display: grid; gap: .2rem; }
+.recipe li::marker { color: var(--gold); }
+.facts-row { display: flex; flex-wrap: wrap; gap: .35rem; margin: .1rem 0 .5rem; }
+.fact { display: inline-flex; align-items: baseline; gap: .3rem; padding: .2rem .6rem; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); font-size: .82rem; }
+.fact small { color: var(--muted); }
+.fact b { font-weight: 700; }
+.player-bot .more { align-self: flex-start; border: 0; background: none; padding: .1rem 0; color: var(--gold); font-weight: 700; font-size: .88rem; }
+/* "המתכון המלא": הסרטון מתכווץ לשליש העליון וממשיך לנגן, וההערה נגללת בשאר */
+.player.reading .stage { flex: 0 0 34%; }
+.player.reading .player-bot { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.player.reading .recipe { max-height: none; -webkit-mask-image: none; mask-image: none; }
+/* בעמודה נגללת, ילד עם overflow:hidden מתכווץ במקום לגלול — ולכן המתכון נחתך באמצע */
+.player-bot > * { flex-shrink: 0; }
+textarea.note-in { min-height: 110px; }
 .acts { display: flex; gap: .5rem; }
 .acts .btn { flex: 1; min-width: 0; }
 .acts .btn.icon { flex: none; width: 44px; padding: 0; }
