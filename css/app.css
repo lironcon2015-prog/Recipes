@@ -288,6 +288,12 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .stage .big svg { width: 26px; height: 26px; margin-inline-start: -3px; color: var(--gold); }
 .stage .msg { position: absolute; inset: auto 16px 16px; text-align: center; color: #fff; font-size: .88rem; }
 .stage .msg a { color: var(--gold); font-weight: 700; }
+/* מסך מלא: הכותרת והפרטים יורדים, הסרטון ממלא הכול, וכפתור יציאה קטן בפינה */
+.player .exit-full { display: none; position: absolute; z-index: 2; top: calc(12px + env(safe-area-inset-top)); inset-inline-end: calc(12px + env(safe-area-inset-left, 0px));
+  background: rgba(0, 0, 0, .45); border-color: rgba(255, 255, 255, .25); color: #fff; }
+.player.immersive .player-top, .player.immersive .player-bot { display: none; }
+.player.immersive .exit-full { display: grid; }
+.player.immersive .stage > iframe.tall { max-width: 100%; }
 .player-bot { background: var(--surface-solid); border-top: 1px solid var(--line); padding: .8rem var(--pad) calc(1rem + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .7rem; }
 .player-bot .tags { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; font-size: .78rem; color: var(--faint); }
 .player-bot .tags .chip { height: 26px; font-size: .76rem; padding: 0 .65rem; }

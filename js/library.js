@@ -458,17 +458,59 @@ function buildPlayer(id) {
 
   const layer = el('div.player', { role: 'dialog', 'aria-modal': 'true', 'aria-label': v.title });
   const shut = el('button.icon-btn', { type: 'button', 'aria-label': 'סגירה' }, icon('x'));
+  const full = el('button.icon-btn', { type: 'button', 'aria-label': 'מסך מלא' }, icon('expand'));
+  const exitFull = el('button.icon-btn.exit-full', { type: 'button', 'aria-label': 'יציאה ממסך מלא' }, icon('shrink'));
   const stage = el('div.stage');
   let offKey = null;
+
+  /* מסך מלא, בשלוש דרגות לפי מה שהמכשיר מרשה:
+     · אייפון: רק <video> יכול להיכנס למסך מלא אמיתי (webkitEnterFullscreen),
+       ומה שמנוגן בנגן המשובץ של אינסטגרם או יוטיוב (iframe) — לא.
+     · אנדרואיד ומחשב: כל השכבה נכנסת למסך מלא (requestFullscreen).
+     · ובכל מקרה: הכותרת והפרטים יורדים והסרטון ממלא את כל המסך
+       (immersive). זה מה שנשאר באייפון לנגן משובץ, ובסיבוב לרוחב הוא מספיק. */
+  let immersive = false;
+  const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+  const setImmersive = on => { immersive = on; layer.classList.toggle('immersive', on); };
+  const enterFull = async () => {
+    const vid = stage.querySelector('video');
+    const canElement = document.fullscreenEnabled || document.webkitFullscreenEnabled;
+    if (vid && !canElement && vid.webkitEnterFullscreen) {
+      try { vid.webkitEnterFullscreen(); return; } catch (e) { /* נופלים למצב הממלא */ }
+    }
+    setImmersive(true);
+    try {
+      if (layer.requestFullscreen) await layer.requestFullscreen({ navigationUI: 'hide' });
+      else if (layer.webkitRequestFullscreen) layer.webkitRequestFullscreen();
+    } catch (e) { /* לא הורשה — המצב הממלא מספיק */ }
+  };
+  const leaveFull = () => {
+    setImmersive(false);
+    if (!fsElement()) return;
+    try {
+      const r = (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      if (r && r.catch) r.catch(() => {});
+    } catch (e) { /* כבר יצא */ }
+  };
+  /* יציאה דרך המערכת (מחווה, כפתור "חזרה") מחזירה גם את הכותרת והפרטים */
+  const onFsChange = () => { if (!fsElement() && immersive) setImmersive(false); };
+  document.addEventListener('fullscreenchange', onFsChange);
+  document.addEventListener('webkitfullscreenchange', onFsChange);
+  full.onclick = enterFull;
+  exitFull.onclick = leaveFull;
+
   const close = openLayer(() => {
     if (offKey) offKey();
+    document.removeEventListener('fullscreenchange', onFsChange);
+    document.removeEventListener('webkitfullscreenchange', onFsChange);
+    if (fsElement()) leaveFull();
     /* עצירה מפורשת: אלמנט שנמחק ממשיך לפעמים להשמיע */
     const media = layer.querySelector('video');
     if (media) { media.pause(); media.removeAttribute('src'); media.load(); }
     layer.remove();
   });
   shut.onclick = close;
-  offKey = onEscape(close);
+  offKey = onEscape(() => (immersive ? leaveFull() : close()));
 
   const openOut = el('a.btn', { href: v.url, target: '_blank', rel: 'noopener noreferrer' }, icon('ext'), 'פתיחה ב' + name);
 
@@ -590,7 +632,7 @@ function buildPlayer(id) {
   }
   bottom.appendChild(acts);
 
-  layer.append(el('div.player-top', null, el('b', { text: v.title }), shut), stage, bottom);
+  layer.append(el('div.player-top', null, el('b', { text: v.title }), full, shut), stage, bottom, exitFull);
   document.body.appendChild(layer);
   shut.focus();
 }
