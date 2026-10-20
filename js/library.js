@@ -23,6 +23,10 @@ import { state as sync, syncNow, onSync, autoOn } from './sync.js';
 import { $, el, icon, toast, whenText, agoText, sheet, openLayer, onEscape, afterLayers, confirmBox, readClipboard } from './ui.js';
 import { VERSION } from './version.js';
 
+/* פלטפורמות שהנגן המשובץ שלהן הוא דף שלם (כותרת, לייקים, תגובות) — למסך
+   מלא עוברים בהן לקובץ הווידאו */
+const CHROME = new Set(['instagram', 'facebook', 'tiktok']);
+
 /* פלטפורמות שהדף שלהן מצהיר על קובץ וידאו או ניתן לשיבוץ */
 const FETCHABLE = new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'x', 'vimeo']);
 
@@ -473,7 +477,36 @@ function buildPlayer(id) {
   const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement;
   const setImmersive = on => { immersive = on; layer.classList.toggle('immersive', on); };
   const enterFull = async () => {
-    const vid = stage.querySelector('video');
+    let vid = stage.querySelector('video');
+    /* הנגן המשובץ של אינסטגרם (ופייסבוק, טיקטוק) הוא דף שלם — כותרת, לייקים,
+       תגובות — ואי אפשר להוריד ממנו כלום מבחוץ. "מסך מלא" שלו נראה כמו
+       בצילום של בעל הריפו: הסרטון בחצי העליון ומתחתיו אינסטגרם. לכן לפני
+       מסך מלא עוברים לקובץ הווידאו עצמו (og:video), שהוא רק הסרטון. */
+    /* יוטיוב, וימאו ודרייב משבצים נגן נקי — הוא ממלא את המסך כמו שהוא */
+    if (!vid && CHROME.has(v.platform)) {
+      let src = v.media && mediaFresh(v) ? v.media : null;
+      if (!src && canFetch) {
+        full.disabled = true;
+        full.classList.add('spin');
+        const fresh = await refreshMedia(v.url);
+        full.disabled = false;
+        full.classList.remove('spin');
+        if (fresh.media) {
+          src = fresh.media;
+          if (!readOnly()) updateVideo(v.id, { media: src });
+          v.media = src;
+          v.mediaAt = Date.now();
+        }
+      }
+      if (src) {
+        showFile(src);
+        vid = stage.querySelector('video');
+      } else {
+        /* בלי קובץ אין מסך מלא אמיתי. עדיף לומר את זה מאשר להגדיל את הדף של אינסטגרם */
+        toast('הסרטון הזה לא נפתח כאן למסך מלא — ' + name + ' לא נותנת את הקובץ. "פתיחה ב' + name + '" מציג אותו שם.');
+        return;
+      }
+    }
     const canElement = document.fullscreenEnabled || document.webkitFullscreenEnabled;
     if (vid && !canElement && vid.webkitEnterFullscreen) {
       try { vid.webkitEnterFullscreen(); return; } catch (e) { /* נופלים למצב הממלא */ }
