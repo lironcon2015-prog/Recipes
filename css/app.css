@@ -308,20 +308,21 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .cap .sum { font-size: .9rem; line-height: 1.45; color: rgba(255, 255, 255, .9); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; cursor: pointer; }
 .cap .more { margin-top: .5rem; display: inline-flex; align-items: center; gap: .3rem; border: 0; background: none; padding: .1rem 0; color: var(--gold); font-weight: 800; font-size: .92rem; }
 .cap .more svg { width: 14px; height: 14px; }
-.rail { position: absolute; z-index: 3; inset-inline-end: max(10px, env(safe-area-inset-left, 0px)); bottom: calc(30px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .9rem; align-items: center; }
-.rail .rb { display: grid; justify-items: center; gap: 3px; font-size: .66rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
-.rail .ibtn { width: 44px; height: 44px; }
+/* side ולא rail: rail הוא שורת הקטגוריות בבית, והכלל הזה הפך אותה לעמודה צפה */
+.side { position: absolute; z-index: 3; inset-inline-end: max(10px, env(safe-area-inset-left, 0px)); bottom: calc(30px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .9rem; align-items: center; }
+.side .rb { display: grid; justify-items: center; gap: 3px; font-size: .66rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
+.side .ibtn { width: 44px; height: 44px; }
 .progress { position: absolute; z-index: 3; inset-inline: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, .2); }
 .progress i { display: block; width: 0; height: 100%; background: var(--gold); }
 /* מסך מלא: כל מה שצף יורד, וכפתור יציאה קטן בפינה */
 .player .exit-full { display: none; position: absolute; z-index: 4; top: calc(12px + env(safe-area-inset-top)); inset-inline-end: calc(12px + env(safe-area-inset-left, 0px)); }
-.player.immersive .topov, .player.immersive .cap, .player.immersive .rail, .player.immersive .scrim-b, .player.immersive .scrim-t { display: none; }
+.player.immersive .topov, .player.immersive .cap, .player.immersive .side, .player.immersive .scrim-b, .player.immersive .scrim-t { display: none; }
 .player.immersive .exit-full { display: grid; }
 
 /* גיליון המתכון: הסרטון מתכווץ לחלק העליון וממשיך לנגן */
 .player.reading .stage { height: 42%; bottom: auto; }
 .player.reading-full .stage { height: 22%; }
-.player.reading .cap, .player.reading .rail, .player.reading .scrim-b, .player.reading .progress { display: none; }
+.player.reading .cap, .player.reading .side, .player.reading .scrim-b, .player.reading .progress { display: none; }
 .rsheet { position: absolute; z-index: 4; inset-inline: 0; bottom: 0; top: 39%; display: flex; flex-direction: column; overflow-y: auto; overscroll-behavior: contain;
   background: var(--surface-solid); color: var(--text); border-radius: 22px 22px 0 0; border-top: 1px solid var(--line-strong);
   padding: 0 var(--pad) calc(1.2rem + env(safe-area-inset-bottom)); transform: translateY(100%); transition: transform .26s cubic-bezier(.25, .8, .3, 1), top .26s cubic-bezier(.25, .8, .3, 1); }

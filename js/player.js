@@ -256,6 +256,7 @@ export function buildPlayer(id, ctx) {
     stage.appendChild(cover);
     progress.hidden = true;
     paintCover();
+    paintRail();
   };
   const playEmbed = src => {
     const frame = el('iframe', { src, title: v.title, allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share', allowFullscreen: true });
@@ -304,7 +305,15 @@ export function buildPlayer(id, ctx) {
   document.addEventListener('fullscreenchange', onFs);
   document.addEventListener('webkitfullscreenchange', onFs);
 
-  const shut = el('button.ibtn', { type: 'button', 'aria-label': 'סגירה', onclick: () => close() }, icon('x'));
+  /* סגירת הנגן סוגרת קודם את מה שפתוח מעליו (המתכון, ⋯). בלי זה הצעד
+     שלהם נשאר בהיסטוריה, ו"חזרה" הבאה בבית לא עשתה כלום. */
+  let menuDone = null;
+  const shutAll = () => {
+    if (menuDone) menuDone();
+    if (recipe) recipe.close();
+    close();
+  };
+  const shut = el('button.ibtn', { type: 'button', 'aria-label': 'סגירה', onclick: () => shutAll() }, icon('x'));
   const full = el('button.ibtn', { type: 'button', 'aria-label': 'מסך מלא', onclick: enterFull }, icon('expand'));
   const exitFull = el('button.ibtn.exit-full', { type: 'button', 'aria-label': 'יציאה ממסך מלא', onclick: leaveFull }, icon('shrink'));
   const topov = el('div.topov', null, full, shut);
@@ -329,12 +338,12 @@ export function buildPlayer(id, ctx) {
       : el('button.ibtn', { type: 'button', 'aria-label': label, onclick: fn }, icon(ic));
     return el('div.rb', null, b, el('span', { text: label }));
   };
-  const rail = el('div.rail');
+  const rail = el('div.side');
   const paintRail = () => {
     rail.textContent = '';
     /* ב-1ג׳ ▶ כבר פותח את אינסטגרם, ואין צורך בשני כפתורים לאותו מקום */
     if (mode !== 'out') rail.appendChild(railBtn('ext', name, null, v.url));
-    if (owner) rail.appendChild(railBtn('pen', 'עריכה', () => { close(); ctx.onEdit(v); }));
+    if (owner) rail.appendChild(railBtn('pen', 'עריכה', () => { shutAll(); ctx.onEdit(v); }));
     rail.appendChild(railBtn('dots', 'עוד', () => openMenu()));
   };
   paintRail();
@@ -377,19 +386,25 @@ export function buildPlayer(id, ctx) {
     };
     [grab, head].forEach(z => { z.addEventListener('pointerdown', down); z.addEventListener('pointerup', up); });
   }
-  /* נגיעה בסרטון כשהגיליון פתוח — חוזרים לסרטון */
-  stage.addEventListener('click', e => { if (recipe && e.target === stage) recipe.close(); }, true);
+  /* נגיעה בסרטון כשהגיליון פתוח — חוזרים לסרטון. הסרטון ממלא את הבמה,
+     ולכן הנגיעה נוחתת עליו ולא על הבמה; היא לא עוצרת אותו. ▶ נשאר ▶. */
+  stage.addEventListener('click', e => {
+    if (!recipe || e.target.closest('.cta')) return;
+    e.stopPropagation();
+    recipe.close();
+  }, true);
 
   /* --- ⋯ --- */
   function openMenu() {
     const dim = el('div.mdim');
     const menu = el('div.amenu', { role: 'menu' });
-    const done = openLayer(() => { dim.remove(); menu.remove(); });
+    const done = openLayer(() => { dim.remove(); menu.remove(); menuDone = null; });
+    menuDone = done;
     dim.onclick = () => done();
     const item = (ic, text, fn, cls) => el('button.it' + (cls || ''), { type: 'button', onclick: fn }, icon(ic), text);
     const g1 = el('div.mgrp');
     if (owner) {
-      g1.appendChild(item('pen', 'עריכת השם, הקטגוריה וההערה', () => { done(); close(); ctx.onEdit(v); }));
+      g1.appendChild(item('pen', 'עריכת השם, הקטגוריה וההערה', () => { shutAll(); ctx.onEdit(v); }));
       g1.appendChild(item('tag', 'העברה לקטגוריה אחרת', () => {
         g1.textContent = '';
         [{ id: '', name: 'בלי קטגוריה' }, ...listCategories()].forEach(c => g1.appendChild(item(c.id === (v.category || '') ? 'check' : 'tag', c.name, () => {
@@ -418,7 +433,7 @@ export function buildPlayer(id, ctx) {
         /* לחיצה שנייה — אחרי שהכפתור אומר בדיוק מה יקרה */
         if (!del.classList.contains('sure')) { del.classList.add('sure'); del.lastChild.textContent = 'למחוק את "' + v.title + '"? לחיצה נוספת מוחקת'; return; }
         removeVideo(v.id);
-        done(); close();
+        shutAll();
         toast('נמחק');
         ctx.onChanged(true);
       }, '.del');
@@ -429,7 +444,13 @@ export function buildPlayer(id, ctx) {
     layer.append(dim, menu);
   }
 
-  offKey = onEscape(() => (immersive ? leaveFull() : close()));
+  /* Escape סוגר את השכבה העליונה בלבד, כמו "חזרה" */
+  offKey = onEscape(() => {
+    if (immersive) leaveFull();
+    else if (menuDone) menuDone();
+    else if (recipe) recipe.close();
+    else close();
+  });
   layer.append(stage, el('div.scrim-t'), el('div.scrim-b'), topov, cap, rail, progress, exitFull);
   document.body.appendChild(layer);
   shut.focus();
