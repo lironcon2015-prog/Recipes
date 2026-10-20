@@ -1,0 +1,669 @@
+/* המסך הראשי: המתכונים, החיפוש, הקטגוריות, ההוספה והנגן.
+
+   הלוגיקה של ההוספה, התמונות והנגינה הועתקה מספריית הסרטונים של nines
+   (js/videolib.js), ושם מתועדת כל מלכודת שנפלו בה — כאן ההערות מקוצרות.
+   מה שחדש כאן הוא המסך: רשת של תמונות לאורך (אפשרות א׳ במוקאפ) או אזור
+   לכל קטגוריה (אפשרות ב׳), עם מתג ביניהן; חיפוש; וגיליון הוספה.
+
+   הפעולה שצריכה להיות הכי קלה היא ההוספה: רואים מתכון באינסטגרם, מעתיקים
+   קישור, "הדבק", "שמירה". השם והתמונה נמשכים לבד, והקטגוריה וההערה לא
+   חובה. */
+
+import {
+  listCategories, addCategory, countByCategory, categoryName,
+  listVideos, addVideo, updateVideo, removeVideo, getVideo, videoCount,
+  platformName, detectPlatform,
+  posterCandidates, needsPoster, needsDownload, needsUpload, thumbUrl, normalizeUrl,
+  readOnly, reload
+} from './videos.js';
+import { needsResolve, lookup, fetchPoster } from './preview.js';
+import * as cloud from './cloud.js';
+import * as posters from './posters.js';
+import { state as sync, syncNow, onSync, autoOn } from './sync.js';
+import { $, el, icon, toast, whenText, agoText, sheet, afterLayers, readClipboard } from './ui.js';
+import { VERSION } from './version.js';
+import { buildPlayer } from './player.js';
+
+/* רשת או לפי קטגוריה — הבחירה נשמרת במכשיר */
+const VIEW_KEY = 'rc:view';
+const readView = () => { try { return localStorage.getItem(VIEW_KEY) === 'cats' ? 'cats' : 'grid'; } catch (e) { return 'grid'; } };
+const saveView = v => { try { localStorage.setItem(VIEW_KEY, v); } catch (e) { /* לא קריטי */ } };
+
+let filter = null;      // null הכול · '' בלי קטגוריה · מזהה קטגוריה
+let query = '';
+let view = readView();
+
+/* כתובות blob: של התמונות השמורות, לפי מזהה מתכון. נבנות לפני הציור,
+   כי IndexedDB אסינכרוני והציור אינו. */
+const posterUrls = new Map();
+/* מתכונים שהתמונה שלהם כבר הורדה מחדש מהתיקייה בביקור הזה — בלי זה
+   תמונה שנכשלת גם אחרי ההורדה נכנסת ללולאה */
+const redownloaded = new Set();
+
+let root = null;
+let repaintBody = () => {};
+
+/* --- חיפוש --- */
+
+/* בלי ניקוד ובלי הבדל אותיות סופיות, כדי ש"פסטה" ימצא "פַּסְטָה" ו"עוגת
+   שוקולד" ימצא "עוגות שוקולד" לפחות בחלקו */
+const FINALS = { 'ך': 'כ', 'ם': 'מ', 'ן': 'נ', 'ף': 'פ', 'ץ': 'צ' };
+function fold(text) {
+  return String(text || '').toLowerCase()
+    .replace(/[֑-ׇ]/g, '')
+    .replace(/[ךםןףץ]/g, c => FINALS[c]);
+}
+
+function matches(v, words) {
+  const hay = fold([v.title, v.note, categoryName(v.category), platformName(v.platform)].join(' '));
+  return words.every(w => hay.includes(w));
+}
+
+function shown() {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  const base = listVideos(filter);
+  return words.length ? base.filter(v => matches(v, words)) : base;
+}
+
+/* --- חלקי כרטיס --- */
+
+function posterEl(v) {
+  const box = el('div.pv');
+  const sources = posterCandidates(v, posterUrls.get(v.id));
+  /* במקום התמונה בלבד — שם הפלטפורמה וכפתור הניגון נשארים. פעם הכרטיס
+     כולו התרוקן, ואי אפשר היה לדעת מאיפה הסרטון שאין לו תמונה. */
+  const placeholder = () => {
+    const ph = el('div.ph', { text: (v.title || '?').trim().charAt(0) });
+    const old = box.querySelector('img');
+    if (old) old.replaceWith(ph); else box.prepend(ph);
+  };
+  if (!sources.length) { placeholder(); return box; }
+  const img = el('img', { alt: '', loading: 'lazy', decoding: 'async' });
+  img.referrerPolicy = 'no-referrer';
+  /* יורדים ברשימה: שמורה במכשיר → הכתובת המקורית → אות. תמונה שמורה לא
+     נמחקת בגלל הצגה אחת שנכשלה (באייפון זה קורה ל-IndexedDB); כשיש עותק
+     בתיקייה — מורידים אותו שוב, פעם אחת בביקור. */
+  let at = 0;
+  img.onerror = () => {
+    if (++at < sources.length) { img.src = sources[at]; return; }
+    placeholder();
+    if (v.posterRef && cloud.isOn() && !redownloaded.has(v.id)) {
+      redownloaded.add(v.id);
+      posterUrls.delete(v.id);
+      posters.drop(v.id).then(backfillPosters);
+    }
+  };
+  img.src = sources[0];
+  box.appendChild(img);
+  return box;
+}
+
+function metaText(v, withCat) {
+  const cat = withCat && v.category ? categoryName(v.category) : '';
+  return [cat, whenText(v.at)].filter(Boolean).join(' · ');
+}
+
+function gridCard(v) {
+  const pv = posterEl(v);
+  pv.append(el('span.plat', { text: platformName(v.platform) }), el('span.playdot', null, icon('play')));
+  return el('button.rc', { type: 'button', onclick: () => openPlayer(v.id) },
+    pv, el('h4', { text: v.title }), el('div.meta', { text: metaText(v, true) }));
+}
+
+function listRow(v, withCat) {
+  return el('button.lr', { type: 'button', onclick: () => openPlayer(v.id) },
+    posterEl(v),
+    el('div.tx', null,
+      el('h4', { text: v.title }),
+      v.note ? el('p', { text: v.note }) : null,
+      el('div.meta', { text: [platformName(v.platform), metaText(v, withCat)].join(' · ') })));
+}
+
+/* --- המסך --- */
+
+function header() {
+  const conf = cloud.config();
+  const line = el('p');
+  if (!conf) {
+    line.append('שמור במכשיר הזה · ');
+    line.appendChild(el('b', { text: 'חיבור לדרייב' }));
+  } else if (sync.busy) {
+    line.textContent = 'מסנכרן…';
+  } else if (sync.error) {
+    line.className = 'bad';
+    line.appendChild(el('b', { text: 'הסנכרון נכשל' }));
+    line.append(' · נסו שוב');
+  } else {
+    line.append(sync.at ? 'סונכרן ' + agoText(sync.at) + ' · ' : '');
+    line.appendChild(el('b', { text: readOnly() ? 'צפייה בלבד' : 'דרייב' }));
+  }
+  const text = el('div.top-text', null, el('h1', { text: (conf && conf.name) || 'המתכונים שלי' }), line);
+  const top = el('header.top', null, el('div.crest', null, el('span', null, icon('bowl'))), text);
+  if (conf) {
+    const s = el('button.icon-btn' + (sync.busy ? '.spin' : ''), { type: 'button', 'aria-label': 'סנכרון עכשיו', onclick: () => syncNow() }, icon('sync'));
+    top.appendChild(s);
+  }
+  top.appendChild(el('a.icon-btn', { href: '#/s', 'aria-label': 'הגדרות וסנכרון' }, icon('gear')));
+  /* השורה עצמה לחיצה: כשאין חיבור — זו ההזמנה, וכשיש שגיאה — זה ההסבר */
+  line.style.cursor = 'pointer';
+  line.onclick = () => { location.hash = '#/s'; };
+  return top;
+}
+
+function searchBox() {
+  const input = el('input', { type: 'search', id: 'q', placeholder: 'חיפוש בשם, בהערה או בקטגוריה', enterkeyhint: 'search', value: query });
+  input.setAttribute('autocomplete', 'off');
+  const clear = el('button.clear', { type: 'button', 'aria-label': 'ניקוי החיפוש', hidden: !query }, icon('x'));
+  input.oninput = () => { query = input.value; clear.hidden = !query; repaintBody(); };
+  clear.onclick = () => { query = ''; input.value = ''; clear.hidden = true; repaintBody(); input.focus(); };
+  return el('label.search', null, icon('search'), input, clear);
+}
+
+function rail() {
+  const counts = countByCategory();
+  const box = el('div.rail', { role: 'toolbar', 'aria-label': 'קטגוריות' });
+  const chip = (label, value, n) => box.appendChild(el('button.chip', {
+    type: 'button', 'aria-pressed': String(filter === value),
+    onclick: () => { filter = filter === value && value !== null ? null : value; repaintBody(); }
+  }, label, el('b', { text: String(n) })));
+  chip('הכל', null, videoCount());
+  listCategories().forEach(c => chip(c.name, c.id, counts[c.id] || 0));
+  /* "בלי קטגוריה" רק כשיש שם משהו */
+  if (counts['']) chip('בלי קטגוריה', '', counts['']);
+  box.appendChild(el('a.chip.ghost', { href: '#/c' }, icon('tag'), readOnly() ? 'קטגוריות' : 'ניהול'));
+  return box;
+}
+
+function viewSeg() {
+  const b = (id, name, label) => el('button', {
+    type: 'button', 'aria-pressed': String(view === id), 'aria-label': label,
+    onclick: () => { view = id; saveView(id); repaintBody(); }
+  }, icon(name));
+  return el('div.view-seg', null, b('grid', 'grid', 'רשת'), b('cats', 'rows', 'לפי קטגוריה'));
+}
+
+function emptyState() {
+  if (videoCount()) {
+    return el('div.empty', null, el('h3', { text: query ? 'לא נמצא' : 'אין כאן מתכונים עדיין' }),
+      el('p', { text: query ? 'נסו מילה אחרת, או חיפוש בכל הקטגוריות.' : 'מתכון חדש שנשמר בקטגוריה הזאת יופיע כאן.' }));
+  }
+  if (readOnly()) {
+    return el('div.empty', null, icon('bowl'), el('h3', { text: 'הספרייה עדיין ריקה' }),
+      el('p', { text: 'מתכונים שיתווספו אצל מי ששיתף יופיעו כאן.' }));
+  }
+  return el('div.empty', null, icon('bowl'), el('h3', { text: 'המתכון הראשון' }),
+    el('p', { text: 'ראיתם סרטון מתכון באינסטגרם, בפייסבוק או בטיקטוק? העתיקו את הקישור ולחצו על "מתכון".' }));
+}
+
+function body() {
+  const frag = el('div');
+  frag.appendChild(rail());
+  const items = shown();
+  const title = query ? 'תוצאות חיפוש'
+    : filter === null ? 'כל המתכונים'
+    : filter === '' ? 'בלי קטגוריה' : categoryName(filter);
+  frag.appendChild(el('div.bar', null, el('h2', { text: title }), el('span.n', { text: String(items.length) }), viewSeg()));
+
+  if (!items.length) { frag.appendChild(emptyState()); return frag; }
+
+  if (view === 'grid') {
+    const grid = el('div.grid');
+    items.forEach(v => grid.appendChild(gridCard(v)));
+    frag.appendChild(grid);
+    return frag;
+  }
+
+  /* לפי קטגוריה: כשמסתכלים על הכול — אזור לכל קטגוריה, שלושה בכל אחד
+     ו"הכל ›". כשמסננים או מחפשים — רשימה אחת. */
+  if (filter !== null || query) {
+    const list = el('div.list', { style: 'margin-top:.8rem' });
+    items.forEach(v => list.appendChild(listRow(v, filter === null)));
+    frag.appendChild(list);
+    return frag;
+  }
+  const groups = listCategories().map(c => ({ id: c.id, name: c.name, items: listVideos(c.id) }));
+  groups.push({ id: '', name: 'בלי קטגוריה', items: listVideos('') });
+  groups.filter(g => g.items.length).forEach(g => {
+    const more = g.items.length > 3
+      ? el('button.n', { type: 'button', onclick: () => { filter = g.id; repaintBody(); window.scrollTo(0, 0); } }, 'הכל ' + g.items.length + ' ›')
+      : el('span.n', { text: String(g.items.length) });
+    frag.appendChild(el('div.sec', null, icon('bowl'), el('h3', { text: g.name }), more));
+    const list = el('div.list');
+    g.items.slice(0, 3).forEach(v => list.appendChild(listRow(v, false)));
+    frag.appendChild(list);
+  });
+  return frag;
+}
+
+/* תמונה שכבר נטענה לא נטענת שוב. כל ציור בונה כרטיסים חדשים, ו-<img> חדש
+   מופיע ריק לרגע ואז "קופץ" — גם כשהכתובת זהה (בעל הריפו: "יש קפיצה של
+   התמונות"). לכן לפני הציור נאספות התמונות הטעונות, ואחריו כל <img> חדש עם
+   אותה כתובת מוחלף בישן, כמו שהוא. אותו פתרון כמו keepImages בגבעתיים. */
+function keepImages(scope, build) {
+  const loaded = new Map();
+  scope.querySelectorAll('img').forEach(i => { if (i.complete && i.naturalWidth) loaded.set(i.src, i); });
+  build();
+  scope.querySelectorAll('img').forEach(i => {
+    const old = loaded.get(i.src);
+    if (old && old !== i) { loaded.delete(i.src); i.replaceWith(old); }
+  });
+}
+
+/* מצב הסנכרון משתנה פעמיים בכל פתיחה (מתחיל, נגמר). זה משנה רק את השורה
+   שבכותרת — אין סיבה לבנות בגללו את כל הכרטיסים מחדש. */
+function paintHeader() {
+  const h = root && root.querySelector('header.top');
+  if (h) h.replaceWith(header());
+}
+
+function paint() {
+  if (!root) return;
+  keepImages(root, paintAll);
+}
+
+function paintAll() {
+  const keepFocus = document.activeElement && document.activeElement.id === 'q';
+  root.textContent = '';
+  root.appendChild(header());
+  root.appendChild(searchBox());
+  const holder = el('div');
+  root.appendChild(holder);
+  root.appendChild(el('p.foot.num', { text: 'גרסה ' + VERSION }));
+  repaintBody = () => keepImages(holder, () => {
+    /* קטגוריה שנמחקה בינתיים (גם ממכשיר אחר) — חוזרים להכול */
+    if (filter && !categoryName(filter)) filter = null;
+    holder.textContent = '';
+    holder.appendChild(body());
+  });
+  repaintBody();
+  if (keepFocus) $('q').focus();
+  $('fab').hidden = readOnly();
+}
+
+/* --- גיליון ההוספה והעריכה --- */
+
+export function openEditor(prefill, video) {
+  if (readOnly()) return;
+  afterLayers(() => buildEditor(prefill, video));
+}
+
+function buildEditor(prefill, video) {
+  const editing = video ? video.id : null;
+  let picked = video ? (video.category || '') : (filter && filter !== '' ? filter : '');
+  let found = null;          // מה שהתצוגה המקדימה מצאה לקישור שבשדה
+  let foundFor = '';         // לאיזה קישור
+  let titleTouched = !!video;
+  let lookingUp = null;
+
+  sheet(video ? 'עריכת מתכון' : 'מתכון חדש', (box, close) => {
+    const form = el('form', { novalidate: true });
+    const url = el('input.inp.ltr', { type: 'url', id: 'f-url', inputmode: 'url', placeholder: 'https://www.instagram.com/reel/…', value: video ? video.url : (prefill && prefill.url ? (normalizeUrl(prefill.url) || prefill.url) : '') });
+    url.setAttribute('autocomplete', 'off');
+    const paste = el('button.btn', { type: 'button' }, icon('clip'), 'הדבק');
+    const preview = el('div', { hidden: true });
+    const title = el('input.inp', { type: 'text', id: 'f-title', placeholder: 'השם נמשך מהקישור — אפשר לשנות', value: video ? video.title : ((prefill && prefill.title) || '') });
+    if (prefill && prefill.title) titleTouched = true;
+    const note = el('textarea.inp.note-in', { id: 'f-note', rows: 4, placeholder: 'אפשר להדביק את כל המתכון — רכיבים, ערכים ושלבים. שורה שנגמרת בנקודתיים תהיה כותרת, ושורה שמתחילה ב-* תהיה פריט ברשימה.' });
+    /* השדה גדל עם הטקסט, עד חצי מסך — מתכון שלם לא נכנס בשלוש שורות */
+    const grow = () => { note.style.height = 'auto'; note.style.height = Math.min(note.scrollHeight + 2, innerHeight * .5) + 'px'; };
+    note.addEventListener('input', grow);
+    setTimeout(grow, 300);
+    note.value = video ? video.note : '';
+    const pick = el('div.pick');
+    const newCat = el('input.inp', { type: 'text', id: 'f-newcat', placeholder: 'שם הקטגוריה החדשה', hidden: true });
+    const err = el('div.err', { hidden: true });
+    const save = el('button.btn.gold.wide', { type: 'submit', text: video ? 'שמירת שינויים' : 'שמירה' });
+
+    const paintPick = () => {
+      pick.textContent = '';
+      const c = (label, id) => pick.appendChild(el('button.chip', {
+        type: 'button', 'aria-pressed': String(picked === id),
+        onclick: () => { picked = picked === id ? '' : id; newCat.hidden = picked !== '__new'; if (picked === '__new') newCat.focus(); paintPick(); }
+      }, label));
+      listCategories().forEach(cat => c(cat.name, cat.id));
+      c('+ חדשה', '__new');
+    };
+    paintPick();
+
+    const showError = (msg, log) => {
+      err.textContent = msg || '';
+      err.hidden = !msg;
+      if (log) err.appendChild(report(log));
+    };
+
+    const showFound = () => {
+      preview.textContent = '';
+      if (!found) { preview.hidden = true; return; }
+      const fake = { id: '_', title: found.title || '', posterUrl: found.image || null, url: foundFor, full: found.full };
+      preview.hidden = false;
+      preview.appendChild(el('div.found', null, posterEl(fake),
+        el('div', null, el('b', { text: found.title || 'לא נמצא שם — אפשר להקליד' }),
+          el('small', { text: platformName(detectPlatform(foundFor).id) + (found.image ? ' · יש תמונה' : ' · בלי תמונה') }))));
+    };
+
+    /* התצוגה המקדימה רצה ברגע שיש קישור תקין, ולא רק בשמירה: השם מופיע
+       בשדה לפני שלוחצים, ואפשר לתקן אותו */
+    const runLookup = async () => {
+      const clean = normalizeUrl(url.value);
+      if (!clean || !autoOn() || clean === foundFor) return lookingUp;
+      foundFor = clean;
+      found = null;
+      preview.hidden = false;
+      preview.textContent = '';
+      preview.appendChild(el('p.hint', { text: 'מביא שם ותמונה…' }));
+      const mine = lookup(clean).then(got => {
+        if (foundFor !== clean) return got;
+        found = got;
+        if (got.title && !titleTouched) title.value = got.title;
+        showFound();
+        return got;
+      });
+      lookingUp = mine;
+      return mine;
+    };
+
+    paste.onclick = async () => {
+      const text = await readClipboard();
+      if (text === null) { showError('הדפדפן לא נתן גישה ללוח. אפשר להדביק ידנית בשדה.'); url.focus(); return; }
+      if (!text) { showError('הלוח ריק. העתיקו קישור מהאפליקציה ונסו שוב.'); return; }
+      url.value = text.trim();
+      showError('');
+      runLookup();
+    };
+    url.addEventListener('change', runLookup);
+    url.addEventListener('paste', () => setTimeout(runLookup, 0));
+    title.addEventListener('input', () => { titleTouched = !!title.value.trim(); });
+
+    form.onsubmit = async e => {
+      e.preventDefault();
+      showError('');
+      const clean = normalizeUrl(url.value);
+      if (!clean) {
+        showError('הקישור לא נראה תקין. מעתיקים מהאפליקציה "העתקת קישור" ומדביקים כאן.');
+        if (url.value) err.appendChild(el('code', { text: cloud.reveal(url.value) }));
+        return;
+      }
+      let category = picked;
+      if (category === '__new') {
+        const made = addCategory(newCat.value);
+        if (!made) { showError('תנו שם לקטגוריה החדשה, או בחרו קיימת.'); newCat.focus(); return; }
+        category = made.id;
+      }
+      const fields = { url: clean, title: title.value, note: note.value, category: category || null };
+
+      /* הקישור השתנה (או חדש) — מחכים לתצוגה המקדימה פעם אחת לפני השמירה */
+      const changedUrl = !video || clean !== video.url;
+      let got = null;
+      if (changedUrl && autoOn()) {
+        save.disabled = true;
+        save.textContent = 'מביא תמונה ושם…';
+        got = (await runLookup()) || found;
+        save.disabled = false;
+        save.textContent = video ? 'שמירת שינויים' : 'שמירה';
+        if (got) {
+          if (got.full) fields.full = got.full;
+          if (got.media) fields.media = got.media;
+          if (got.title && !fields.title.trim()) fields.title = got.title;
+          fields.posterUrl = got.image || null;
+        }
+      }
+
+      const saved = editing ? updateVideo(editing, fields) : addVideo(fields);
+      if (!saved) { showError('לא הצלחנו לשמור. נסו שוב.'); return; }
+      close();
+      paint();
+      toast(editing ? 'נשמר' : 'נוסף למתכונים');
+
+      /* התמונה אחרי המתכון: הכרטיס מופיע מיד, והתמונה נכנסת כשהיא מוכנה */
+      if (got && got.image) {
+        await savePoster(saved.id, got.image, got.log);
+        await loadPosterUrls();
+        paint();
+      }
+      syncNow();
+      if (needsResolve(saved.url) && !saved.full && changedUrl && autoOn()) {
+        toast('נשמר, אבל הקישור המקוצר לא נפתח — "פתיחה" עובד, הנגינה בתוך האפליקציה לא');
+      }
+    };
+
+    form.append(
+      el('label.field', null, el('span', { text: 'קישור' }), el('div.row', null, url, paste)),
+      preview,
+      el('label.field', null, el('span', { text: 'שם' }), title),
+      el('div.field', null, el('span', { text: 'קטגוריה' }), pick),
+      newCat,
+      el('label.field', null, el('span', { text: 'הערה או המתכון (לא חובה)' }), note),
+      err,
+      el('div.sheet-go', null, save)
+    );
+    box.appendChild(form);
+
+    if (url.value && !video) runLookup();
+    else if (!url.value) setTimeout(() => url.focus(), 280);
+  });
+}
+
+/* --- הנגן ---
+   המסך עצמו ב-player.js (כיוון א׳ + 1ג׳ במוקאפ). כאן רק מה שהוא צריך
+   מהספרייה: התמונות השמורות, העריכה, וציור הספרייה מחדש אחרי שינוי. */
+
+function openPlayer(id) {
+  afterLayers(() => buildPlayer(id, {
+    posterUrls,
+    onEdit: v => openEditor(null, getVideo(v.id)),
+    onChanged: removed => {
+      if (removed) posterUrls.delete(id);
+      paint();
+      syncNow();
+    },
+    fixPoster
+  }));
+}
+
+/* תמונה שלא נשמרה: חיפוש מחדש ביד, מתוך הנגן. ההשלמה ברקע מנסה לבד בכל
+   פתיחה, אבל בשקט — כאן רואים מה כל שירות ענה ("מה קרה?"), וזו הדרך היחידה
+   לדעת למה סרטון מסוים נשאר בלי תמונה. */
+function fixPoster(v, after) {
+  const line = el('div.fixposter', null, el('span', { text: 'לסרטון הזה אין תמונה שמורה.' }));
+  const go = el('button.btn.sm', { type: 'button' }, icon('sync'), 'להביא שוב');
+  go.onclick = async () => {
+    go.disabled = true;
+    go.textContent = 'מחפש…';
+    const old = line.querySelector('details');
+    if (old) old.remove();
+    const got = await lookup(v.url);
+    const log = got.log;
+    if (got.full && !v.full) updateVideo(v.id, { full: got.full });
+    if (got.media) updateVideo(v.id, { media: got.media });
+    let ok = false;
+    for (const src of [...new Set([got.image, thumbUrl(v.full || v.url), v.posterUrl].filter(Boolean))]) {
+      if (await savePoster(v.id, src, log)) { ok = true; break; }
+    }
+    if (ok) {
+      await loadPosterUrls();
+      paint();
+      line.replaceWith(el('p.hint', { text: 'התמונה נשמרה.' }));
+      after();
+      syncNow();
+      return;
+    }
+    go.disabled = false;
+    go.textContent = 'נסה שוב';
+    line.firstChild.textContent = got.image ? 'נמצאה תמונה, אבל לא הצלחנו לשמור אותה.' : 'לא נמצאה תמונה לקישור הזה.';
+    line.appendChild(report(log));
+  };
+  line.appendChild(go);
+  return line;
+}
+
+/* --- התמונות ---
+   שלוש דרכים להשיג תמונה, לפי כמה הן עולות: מה שכבר שמור במכשיר, מה
+   שיושב בתיקייה בדרייב, ומה שצריך למשוך מהרשת. */
+
+async function loadPosterUrls() {
+  const saved = await posters.saved();
+  posterUrls.clear();
+  for (const v of listVideos()) {
+    if (!saved.has(v.id)) continue;
+    const url = await posters.url(v.id);
+    if (url) posterUrls.set(v.id, url);
+  }
+  return saved;
+}
+
+/** מביאה תמונה, מקטינה ושומרת. true אם באמת נשמרה.
+
+    הטלפון והסקריפט מביאים אותה ביחד, והראשון שמצליח קובע — הסקריפט
+    מתעורר לאט ואינסטגרם חוסמת שרתים, ואין סיבה שהכרטיס יחכה לו. מה
+    שהטלפון הביא עולה לתיקייה ברקע (cloudCopy). כמו ב-nines. */
+async function savePoster(id, src, log) {
+  if (!src) return false;
+  const owner = cloud.isOn() && !cloud.isViewer();
+  const byScript = owner
+    ? cloud.grabPoster(id, src).catch(() => { if (log) log.push('תמונה · הסקריפט נכשל'); return null; })
+    : Promise.resolve(null);
+  const byPhone = fetchPoster(src, log);
+  const got = await firstOf([
+    byPhone.then(blob => (blob ? { blob, ref: null } : null)),
+    byScript.then(g => (g && g.blob ? { blob: g.blob, ref: g.ref || null } : null))
+  ]);
+  const small = got ? await posters.shrink(got.blob) : null;
+  if (small && await posters.put(id, small)) {
+    if (!readOnly()) updateVideo(id, { posterKind: 'blob', posterUrl: src, posterRef: got.ref || undefined });
+    if (owner && !got.ref) cloudCopy(id, byScript, small);
+    return true;
+  }
+  if (!readOnly()) updateVideo(id, { posterUrl: src });
+  return false;
+}
+
+/** הראשון שמחזיר משהו, או null כשכולם החזירו null */
+function firstOf(list) {
+  return new Promise(resolve => {
+    let left = list.length;
+    list.forEach(p => p.then(value => {
+      if (value) resolve(value);
+      else if (!--left) resolve(null);
+    }));
+  });
+}
+
+/* העותק בתיקייה, אחרי שהכרטיס כבר מוצג. נכשל? needsUpload יעלה בפתיחה הבאה. */
+async function cloudCopy(id, byScript, blob) {
+  try {
+    const g = await byScript;
+    const ref = (g && g.ref) || await cloud.putPoster(id, blob);
+    if (ref && !readOnly()) { updateVideo(id, { posterRef: ref }); syncNow(); }
+  } catch (e) { /* יעלה בהשלמה הבאה */ }
+}
+
+/* השלמת תמונות חסרות ברקע — מעט בכל פתיחה, לא הכול בבת אחת. הורדה
+   מהתיקייה קודמת (זולה), העלאה אחרונה (כדי שגם מה שהובא עכשיו יעלה). */
+const BACKFILL = 8;
+const DOWNLOAD = 20;
+const UPLOAD = 20;
+let filling = false;
+
+async function backfillPosters() {
+  if (filling) return;
+  filling = true;
+  try {
+    const saved = await loadPosterUrls();
+    let changed = false;
+
+    if (cloud.isOn()) {
+      for (const v of needsDownload(saved).slice(0, DOWNLOAD)) {
+        try {
+          const blob = await cloud.getPoster(v.posterRef);
+          const small = blob ? (await posters.shrink(blob)) || blob : null;
+          if (small && await posters.put(v.id, small)) { changed = true; saved.add(v.id); }
+        } catch (e) {
+          /* הסקריפט סירב — הקובץ כבר לא בתיקייה. פעם זה עצר את כל ההורדות
+             (break), ותמונה אחת שנמחקה השאירה את כל מה שאחריה בלי תמונה לתמיד.
+             עכשיו: ממשיכים, ואצל הבעלים המזהה המת נמחק כדי שהתמונה תימשך מחדש. */
+          if (e && e.refused) {
+            if (!readOnly()) { updateVideo(v.id, { posterRef: null }); changed = true; }
+            continue;
+          }
+          break;   /* הסקריפט לא עונה — אין טעם להמשיך */
+        }
+      }
+    }
+
+    if (autoOn() && !readOnly()) {
+      for (const v of needsPoster(saved).slice(0, BACKFILL)) {
+        const known = thumbUrl(v.full || v.url) || v.posterUrl;
+        let ok = await savePoster(v.id, known, null);
+        if (!ok) {
+          const fresh = (await lookup(v.url)).image;
+          if (fresh && fresh !== known) ok = await savePoster(v.id, fresh, null);
+        }
+        if (ok) { changed = true; saved.add(v.id); }
+      }
+    }
+
+    if (cloud.isOn() && !cloud.isViewer()) {
+      for (const v of needsUpload(saved).slice(0, UPLOAD)) {
+        try {
+          const blob = await posters.blob(v.id);
+          const ref = blob ? await cloud.putPoster(v.id, blob) : null;
+          if (ref) { updateVideo(v.id, { posterRef: ref }); changed = true; }
+        } catch (e) { break; }
+      }
+    }
+
+    if (changed) {
+      await loadPosterUrls();
+      if (root && !root.hidden) paint();
+      if (cloud.isOn() && !cloud.isViewer()) syncNow();
+    }
+  } finally {
+    filling = false;
+  }
+}
+
+/* מה כל שירות ענה — לרגע שבו משהו לא עובד בטלפון מסוים */
+function report(log) {
+  const box = el('details.log', null, el('summary', { text: 'מה קרה?' }));
+  const ul = el('ul');
+  ((log && log.length) ? log : ['לא נשלחה אף בקשה']).forEach(line => ul.appendChild(el('li', { text: line })));
+  box.appendChild(ul);
+  return box;
+}
+
+/* --- הרכבה --- */
+
+let offSync = null;
+let onVisible = null;
+
+/** prefill: {url,title} מקישור ששותף לאפליקציה, או null */
+export function mountLibrary(node, prefill) {
+  root = node;
+  reload();
+  document.title = 'המתכונים שלי';
+  $('fab').onclick = () => openEditor(null, null);
+  /* ציור ראשון אחרי שידוע אילו תמונות שמורות במכשיר (IndexedDB, עשרות
+     אלפיות שנייה) — ולא לפני: ציור מוקדם הציג את הכתובות המקוריות או אות,
+     ומיד אחריו ציור שני עם התמונות השמורות. זו הייתה הקפיצה הראשונה. */
+  loadPosterUrls().then(() => { if (root === node) paint(); });
+  offSync = onSync(changed => {
+    if (!root || root.hidden) return;
+    if (changed) loadPosterUrls().then(() => { paint(); backfillPosters(); });
+    else paintHeader();
+  });
+  /* חזרה לאפליקציה היא הרגע לסנכרן: בדיוק פתחו אותה כדי לראות מה יש */
+  onVisible = () => { if (document.visibilityState === 'visible' && root && !root.hidden) syncNow(); };
+  document.addEventListener('visibilitychange', onVisible);
+  if (cloud.isOn()) syncNow().then(backfillPosters);
+  else backfillPosters();
+  if (prefill && (prefill.url || prefill.title)) openEditor(prefill, null);
+  return {
+    destroy() {
+      if (offSync) offSync();
+      document.removeEventListener('visibilitychange', onVisible);
+      $('fab').hidden = true;
+      root.textContent = '';
+      root = null;
+    }
+  };
+}
