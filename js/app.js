@@ -73,7 +73,14 @@ async function boot() {
         const wait = setInterval(() => { if (!document.querySelector('.sheet, .player')) { clearInterval(wait); go(); } }, 1000);
       } else go();
     });
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    /* הדפדפן בודק אם יש sw.js חדש רק בפתיחה מאפס. אפליקציה שחוזרת מהרקע
+       (באייפון — כמעט תמיד) לא נפתחת מאפס, ונשארה על הגרסה הישנה ימים.
+       לכן בודקים גם בכל חזרה לאפליקציה. */
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    }).catch(() => {});
   }
   /* בקשה שהדפדפן לא יפנה את המתכונים כשהטלפון מתמלא. לא מציל מניקוי ידני. */
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
