@@ -268,8 +268,14 @@ export function buildPlayer(id, ctx) {
   const playEmbed = src => {
     const frame = el('iframe', { src, title: v.title, allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share', allowFullscreen: true });
     frame.referrerPolicy = 'strict-origin-when-cross-origin';
-    if (isPortrait(playable(v))) frame.classList.add('tall');
     stage.textContent = '';
+    /* אינסטגרם: רק החלון של הסרטון, בלי הכותרת, הלייקים והתגובות שלהם —
+       החישוב ב-.igcrop ב-app.css */
+    if (v.platform === 'instagram') {
+      stage.appendChild(el('div.igcrop' + (isPortrait(playable(v)) ? '' : '.post'), null, frame));
+      return;
+    }
+    if (isPortrait(playable(v))) frame.classList.add('tall');
     stage.appendChild(frame);
   };
 
@@ -370,7 +376,7 @@ export function buildPlayer(id, ctx) {
     const head = el('div.sh-head', null, el('h3', { text: v.title }),
       el('button.ibtn.flat', { type: 'button', 'aria-label': 'עוד', onclick: () => openMenu() }, icon('dots')));
     const meta = el('div.meta', { text: [cat, name, 'נשמר ' + whenText(v.at)].filter(Boolean).join(' · ') });
-    panel.append(grab, head, meta, recipeBody(v));
+    panel.append(el('div.sh-top', null, grab, head), meta, recipeBody(v));
     layer.appendChild(panel);
     layer.classList.add('reading');
     const shutRecipe = openLayer(() => {

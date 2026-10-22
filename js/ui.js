@@ -186,3 +186,34 @@ export async function readClipboard() {
     return null;
   }
 }
+
+/* --- ערכת הצבעים ---
+   כהה כברירת מחדל — מי שלא בחר לא רואה שינוי. בהיר נוח במטבח באור יום;
+   "כמו המכשיר" מתחלף לבד עם הטלפון. הסקריפט הקטן ב-index.html מחיל את
+   הבחירה לפני הציור הראשון, כדי שלא יהיה הבזק כהה אצל מי שבחר בהיר. */
+const THEME_KEY = 'rc:theme';
+const sysLight = window.matchMedia ? matchMedia('(prefers-color-scheme: light)') : null;
+
+export function themePref() {
+  try { const t = localStorage.getItem(THEME_KEY); return t === 'light' || t === 'auto' ? t : 'dark'; }
+  catch (e) { return 'dark'; }
+}
+
+function paintTheme() {
+  const pref = themePref();
+  const light = pref === 'light' || (pref === 'auto' && !!sysLight && sysLight.matches);
+  if (light) document.documentElement.dataset.theme = 'light';
+  else delete document.documentElement.dataset.theme;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = light ? '#F4F5F8' : '#0A1321';
+}
+
+export function setTheme(pref) {
+  try { localStorage.setItem(THEME_KEY, pref); } catch (e) { /* לא קריטי — חל עד הפתיחה הבאה */ }
+  paintTheme();
+}
+
+export function watchTheme() {
+  if (sysLight && sysLight.addEventListener) sysLight.addEventListener('change', () => { if (themePref() === 'auto') paintTheme(); });
+  paintTheme();
+}

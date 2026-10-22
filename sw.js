@@ -10,7 +10,7 @@
    שמתחיל ב-"recipes-", וקובץ שחסר במטמון (אפליקציה אחרת מחקה אותו)
    נלקח מהרשת ונשמר שוב, במקום להפיל את האפליקציה. */
 
-const VERSION = '1.0.12';
+const VERSION = '1.0.13';
 const PREFIX = 'recipes-';
 const SHELL = PREFIX + VERSION;
 

@@ -22,7 +22,7 @@ import * as posters from './posters.js';
 import { state as sync, syncNow, onSync, autoOn } from './sync.js';
 import { $, el, icon, toast, whenText, agoText, sheet, afterLayers, readClipboard } from './ui.js';
 import { VERSION } from './version.js';
-import { buildPlayer } from './player.js';
+import { buildPlayer, summary } from './player.js';
 
 /* רשת או לפי קטגוריה — הבחירה נשמרת במכשיר */
 const VIEW_KEY = 'rc:view';
@@ -115,7 +115,8 @@ function listRow(v, withCat) {
     posterEl(v),
     el('div.tx', null,
       el('h4', { text: v.title }),
-      v.note ? el('p', { text: v.note }) : null,
+      /* התקציר ולא ההערה כמו שהודבקה: "קלוריות: כ-195 | …" ו-"* בננה * ביצים" */
+      v.note ? el('p', { text: summary(v.note) }) : null,
       el('div.meta', { text: [platformName(v.platform), metaText(v, withCat)].join(' · ') })));
 }
 

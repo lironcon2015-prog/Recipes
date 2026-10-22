@@ -10,7 +10,7 @@ import { mountCategories } from './categories.js';
 import { mountSync } from './sync.js';
 import { migrate } from './videos.js';
 import * as cloud from './cloud.js';
-import { $, afterLayers } from './ui.js';
+import { $, afterLayers, watchTheme } from './ui.js';
 
 let current = null;
 let shared = null;
@@ -55,6 +55,7 @@ function readShare() {
 }
 
 async function boot() {
+  watchTheme();
   readShare();
   await migrate().catch(() => {});
   window.addEventListener('hashchange', route);

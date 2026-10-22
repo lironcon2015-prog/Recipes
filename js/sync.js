@@ -10,7 +10,7 @@
 import * as cloud from './cloud.js';
 import { reload, exportDoc, applyRemote, videoCount } from './videos.js';
 import { probe } from './preview.js';
-import { el, icon, agoText, confirmBox } from './ui.js';
+import { el, icon, agoText, confirmBox, themePref, setTheme } from './ui.js';
 import { VERSION } from './version.js';
 
 export const state = { busy: false, at: 0, error: '' };
@@ -92,6 +92,7 @@ export function mountSync(root, prefill) {
     else if (cloud.isOwner()) drawOwner(root, paint);
     else if (cloud.isViewer()) drawViewer(root, paint);
     else drawSetup(root, paint);
+    if (!prefill) drawLook(root);
     if (!cloud.isViewer() && !prefill) drawPrefs(root);
     root.appendChild(el('p.foot.num', { text: 'גרסה ' + VERSION }));
   };
@@ -292,6 +293,19 @@ function disconnectBtn(label, ask, paint) {
   };
   wrap.appendChild(b);
   return wrap;
+}
+
+/* מתג משולש ולא החלקה: שלוש אפשרויות, כמו "רשת | רשימה" בבית */
+function drawLook(root) {
+  root.appendChild(el('h2.section-title', { text: 'תצוגה' }));
+  const card = el('div.card.stack');
+  const seg = el('div.tseg', { role: 'group', 'aria-label': 'ערכת צבעים' });
+  const opts = [['dark', 'כהה'], ['light', 'בהיר'], ['auto', 'כמו המכשיר']];
+  const mark = () => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.t === themePref())));
+  opts.forEach(([t, label]) => seg.appendChild(el('button', { type: 'button', 'data-t': t, text: label, onclick: () => { setTheme(t); mark(); } })));
+  mark();
+  card.append(seg, el('p.hint', { text: 'בהיר קריא יותר באור יום ובמטבח. "כמו המכשיר" מתחלף לבד בערב.' }));
+  root.appendChild(card);
 }
 
 function drawPrefs(root) {
