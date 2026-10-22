@@ -272,7 +272,15 @@ export function buildPlayer(id, ctx) {
     /* אינסטגרם: רק החלון של הסרטון, בלי הכותרת, הלייקים והתגובות שלהם —
        החישוב ב-.igcrop ב-app.css */
     if (v.platform === 'instagram') {
-      stage.appendChild(el('div.igcrop' + (isPortrait(playable(v)) ? '' : '.post'), null, frame));
+      const box = el('div.igcrop', null, frame);
+      /* בפוסט הקופסה בפרופורציה של התמונה (מרובע, 4:5, לרוחב), ולא יותר
+         גבוהה מ-4:5. ברילס היא תמיד 4:5 — התמונה שלו 9:16 ולא תעזור. */
+      const img = cover.querySelector('img');
+      if (!isPortrait(playable(v)) && img && img.naturalWidth) {
+        const r = Math.min(1.25, Math.max(0.52, img.naturalHeight / img.naturalWidth));
+        box.style.setProperty('--ig-r', r.toFixed(3));
+      }
+      stage.appendChild(box);
       return;
     }
     if (isPortrait(playable(v))) frame.classList.add('tall');
