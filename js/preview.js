@@ -86,14 +86,19 @@ export function needsResolve(url) {
 }
 
 /** מה שידוע על הקישור. השדות שלא נמצאו חוזרים null, והשאר עדיין שימושי. */
-export async function lookup(url) {
+export async function lookup(url, opts) {
+  const wantMedia = !!(opts && opts.media);
   const out = { full: null, title: null, image: thumbUrl(url), media: null, log: [] };
   /* מתי אפשר להפסיק: יש שם, יש תמונה, ויש **דרך אחת** לנגן — הקובץ
      עצמו, או נגן משובץ שכבר עכשיו אפשר לבנות מהכתובת. קישור יוטיוב
      נסגר כך אחרי בקשה אחת: אין לו og:video, ואין שום טעם להעיר בגללו
      עוד שלושה שירותים ולהמתין להם. */
   const playable = () => out.media || embedUrl(url) || (out.full && embedUrl(out.full));
-  const enough = () => out.title && out.image && playable();
+  /* לפני ניגון רק הקובץ נחשב. בלי זה, באינסטגרם — שתמיד יש לה נגן
+     משובץ — החיפוש נעצר אחרי שם ותמונה מהספק הראשון, ואף ספק אחר לא
+     נשאל על הקובץ. הנגן המשובץ שלהם לרוב לא מנגן ("Watch on Instagram")
+     ושולח לאינסטגרם — בדיוק מה שבעל הריפו נתקל בו. */
+  const enough = wantMedia ? () => !!out.media : () => out.title && out.image && playable();
 
   /* הסקריפט והספק הראשון יוצאים **ביחד**, וחוזרים ברגע שיש מספיק — ממי
      שענה ראשון. פעם הסקריפט יצא לבד ראשון: Apps Script מתעורר לאט (עד
@@ -109,12 +114,13 @@ export async function lookup(url) {
   }, BUDGET));
   const pending = [];
   if (cloud.isOn()) pending.push(viaScript(url, out));
-  pending.push(visit(PROVIDERS[0], url, out));
+  /* הקובץ — כולם מיד: מישהו לחץ ▶ ומחכה, ואין טעם לחכות לראשון */
+  pending.push(...(wantMedia ? PROVIDERS : PROVIDERS.slice(0, 1)).map(p => visit(p, url, out)));
   await Promise.race([until(pending, enough), deadline]);
 
   /* לא הספיק — שאר הספקים, ביחד ולא בזה אחר זה: בטור, שני ספקים תקועים
      אכלו שש-עשרה שניות לפני שהשלישי בכלל התחיל */
-  if (!enough()) {
+  if (!enough() && !wantMedia) {
     pending.push(...PROVIDERS.slice(1).map(p => visit(p, url, out)));
     await Promise.race([until(pending, enough), deadline]);
   }
@@ -124,7 +130,7 @@ export async function lookup(url) {
 
 /** רק הקובץ, לרענון לפני ניגון — כתובת של קובץ בפייסבוק פגה אחרי שעות */
 export async function refreshMedia(url) {
-  const found = await lookup(url);
+  const found = await lookup(url, { media: true });
   return { media: found.media, full: found.full, log: found.log };
 }
 
