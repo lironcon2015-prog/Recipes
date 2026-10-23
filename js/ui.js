@@ -143,6 +143,7 @@ export function onEscape(fn) {
 
 /** גיליון תחתון. מחזיר {body, close}. */
 export function sheet(title, build) {
+  const edge = holdEdge(sheetTone);
   const scrim = el('div.scrim');
   const box = el('div.sheet', { role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
   const head = el('div.sheet-head', null, el('h2', { text: title }));
@@ -153,6 +154,7 @@ export function sheet(title, build) {
   let offKey = null;
   const close = openLayer(() => {
     if (offKey) offKey();
+    edge.release();
     scrim.classList.remove('on');
     box.classList.remove('on');
     setTimeout(() => { scrim.remove(); box.remove(); }, 260);
@@ -204,8 +206,37 @@ function paintTheme() {
   const light = pref === 'light' || (pref === 'auto' && !!sysLight && sysLight.matches);
   if (light) document.documentElement.dataset.theme = 'light';
   else delete document.documentElement.dataset.theme;
+  const top = edges[edges.length - 1];
+  const tone = top ? (typeof top.color === 'function' ? top.color() : top.color) : null;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.content = light ? '#F4F5F8' : '#0A1321';
+  if (meta) meta.content = tone || (light ? '#F4F5F8' : '#0A1321');
+  document.documentElement.style.background = tone || '';
+}
+
+/* --- הקצה התחתון באייפון ---
+   באפליקציה שבמסך הבית אייפון לא מצייר את הדף עד תחתית המסך: נשאר פס
+   בגובה שורת השעה, ובראש המסך שכבה דקה מעל התוכן — בצבע הרקע של הערכה.
+   מתחת לנגן השחור זה יצא פס בהיר (צילומים של בעל הריפו). הפס מחוץ לדף,
+   ולכן אי אפשר להאריך אליו את הנגן — רק לצבוע אותו, דרך theme-color
+   והרקע של html, בצבע של מה שבתחתית: שחור לנגן, צבע הגיליון לגיליון.
+   מחסנית, כי גיליון המתכון נפתח מעל הנגן וחוזר אליו. */
+const edges = [];
+export const sheetTone = () => getComputedStyle(document.documentElement).getPropertyValue('--surface-solid').trim() || null;
+
+/** צבע לקצה כל עוד השכבה פתוחה: צבע, או פונקציה שמחזירה צבע לפי הערכה */
+export function holdEdge(color) {
+  const hold = { color };
+  edges.push(hold);
+  paintTheme();
+  return {
+    set(next) { hold.color = next; paintTheme(); },
+    release() {
+      const i = edges.indexOf(hold);
+      if (i < 0) return;
+      edges.splice(i, 1);
+      paintTheme();
+    }
+  };
 }
 
 export function setTheme(pref) {

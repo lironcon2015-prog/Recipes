@@ -18,7 +18,7 @@ import {
   platformName, embedUrl, isPortrait, playable, mediaFresh, posterCandidates, readOnly
 } from './videos.js';
 import { refreshMedia } from './preview.js';
-import { el, icon, toast, whenText, openLayer, onEscape } from './ui.js';
+import { el, icon, toast, whenText, openLayer, onEscape, holdEdge, sheetTone } from './ui.js';
 
 /* הנגן המשובץ של אלה הוא דף שלם — מנגנים אצלם רק את הקובץ */
 const CHROME = new Set(['instagram', 'facebook', 'tiktok']);
@@ -173,8 +173,11 @@ export function buildPlayer(id, ctx) {
 
   let offKey = null;
   let video = null;
+  /* הפס שאייפון משאיר מתחת לדף — שחור כמו הנגן (ui.js, holdEdge) */
+  const edge = holdEdge('#000');
   const close = openLayer(() => {
     if (offKey) offKey();
+    edge.release();
     if (fsEl()) leaveFull();
     if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
     layer.remove();
@@ -387,7 +390,10 @@ export function buildPlayer(id, ctx) {
     panel.append(el('div.sh-top', null, grab, head), meta, recipeBody(v));
     layer.appendChild(panel);
     layer.classList.add('reading');
+    /* הגיליון בתחתית — הפס שמתחתיו בצבע שלו, ולא שחור מתחת ללבן */
+    edge.set(sheetTone);
     const shutRecipe = openLayer(() => {
+      edge.set('#000');
       layer.classList.remove('reading', 'reading-full');
       panel.classList.add('going');
       setTimeout(() => panel.remove(), 220);
