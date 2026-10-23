@@ -10,6 +10,9 @@
    · באינסטגרם, בפייסבוק ובטיקטוק מנגנים את קובץ הווידאו עצמו. כשאין קובץ —
      הנגן שלהם, בתוך האפליקציה (1.0.12; ב-1ג׳ ▶ יצא לאינסטגרם, וזה קרה כמעט
      תמיד). רק כשאין גם נגן — ▶ פותח את הסרטון אצלם.
+   · רילס שאינסטגרם חוסמת מחוץ לה (זכויות, כמעט תמיד על המוזיקה): אין קובץ,
+     והנגן שלה רק שולח אליה בלחיצה. לכן במקומו — התמונה, הסבר, ו"פתיחה
+     באינסטגרם" כבחירה (1.0.17; הבדיקה ב-preview.js, igMedia).
 
    הנגינה, התמונות והקישור עצמו — videos.js ו-preview.js, כמו קודם. */
 
@@ -179,13 +182,16 @@ export function buildPlayer(id, ctx) {
     if (offKey) offKey();
     edge.release();
     if (fsEl()) leaveFull();
-    if (video) { video.pause(); video.removeAttribute('src'); video.load(); }
+    /* null — כדי שרענון של קובץ שעוד בדרך לא ינגן ברקע אחרי הסגירה */
+    if (video) { video.pause(); video.removeAttribute('src'); video.load(); video = null; }
     layer.remove();
   });
 
   /* --- מה מנגנים ---
      file: קובץ הווידאו (נקי, ממלא את המסך) · embed: נגן נקי (יוטיוב וכו')
-     · out: אין קובץ — 1ג׳, התמונה ו"מתנגן באינסטגרם" · null: עוד לא ידוע */
+     · out: אין קובץ — 1ג׳, התמונה ו"מתנגן באינסטגרם"
+     · blocked: אינסטגרם לא מרשה לנגן מחוץ לה — התמונה, הסבר ו"פתיחה באינסטגרם"
+     · null: עוד לא ידוע */
   let mode = v.media && mediaFresh(v) ? 'file' : (embed ? 'embed' : null);
   let pending = null;
   const resolve = () => {
@@ -197,7 +203,7 @@ export function buildPlayer(id, ctx) {
         if (owner) updateVideo(v.id, { media: got.media });
         v.media = got.media; v.mediaAt = Date.now();
         mode = 'file';
-      } else mode = fallback ? 'embed' : 'out';
+      } else mode = got.blocked ? 'blocked' : (fallback ? 'embed' : 'out');
       paintCover();
     });
     return pending;
@@ -212,26 +218,35 @@ export function buildPlayer(id, ctx) {
   }
   const bigPlay = el('button.bigp', { type: 'button', 'aria-label': 'ניגון' }, icon('play'));
   const outLink = el('a.out', { href: v.url, target: '_blank', rel: 'noopener noreferrer' }, icon('ext'), 'מתנגן ב' + name);
-  const cta = el('div.cta', null, bigPlay, outLink);
+  const why = el('p.why', { text: name + ' לא מרשה לנגן את הסרטון הזה מחוץ ל' + name + ', בגלל זכויות יוצרים — בדרך כלל על המוזיקה שבו.' });
+  const cta = el('div.cta', null, bigPlay, why, outLink);
   cover.appendChild(cta);
   const paintCover = () => {
-    /* 1ג׳: ▶ עצמו פותח את אינסטגרם — אותה לחיצה, יעד אחר, והתווית אומרת לאן */
-    outLink.hidden = mode !== 'out';
+    /* 1ג׳: ▶ עצמו פותח את אינסטגרם — אותה לחיצה, יעד אחר, והתווית אומרת לאן.
+       חסום: אין ▶ בכלל — רק ההסבר, ויציאה כבחירה */
+    const blocked = mode === 'blocked';
+    bigPlay.hidden = blocked;
+    why.hidden = !blocked;
+    outLink.hidden = mode !== 'out' && !blocked;
+    outLink.lastChild.textContent = (blocked ? 'פתיחה ב' : 'מתנגן ב') + name;
     bigPlay.classList.toggle('busy', !!pending);
   };
   paintCover();
   stage.appendChild(cover);
-  /* יודעים מראש אם יש קובץ, כדי ש-▶ יתנהג נכון כבר בלחיצה הראשונה */
+  /* יודעים מראש אם יש קובץ, כדי ש-▶ יתנהג נכון כבר בלחיצה הראשונה.
+     ▶ מסתובב עד שיודעים — ובחסום מתחלף בהסבר */
   resolve();
+  paintCover();
 
   const playFile = src => {
     video = el('video', { src, playsInline: true, preload: 'auto', autoplay: true });
     video.setAttribute('playsinline', '');
     if (still) video.poster = still;
-    /* סרטון לרוחב לא נחתך למילוי — רק סרטון לאורך ממלא */
-    video.addEventListener('loadedmetadata', () => { video.classList.toggle('wide', video.videoWidth > video.videoHeight); });
+    /* רק סרטון לאורך ממלא את המסך; לרוחב או מרובע נשאר שלם — במילוי נחתך
+       ממנו יותר מחצי. video מתאפס כשהקובץ נכשל, ואירוע שכבר בתור עוד מגיע */
+    video.addEventListener('loadedmetadata', () => { if (video) video.classList.toggle('wide', video.videoWidth >= video.videoHeight); });
     video.addEventListener('timeupdate', () => {
-      if (!video.duration) return;
+      if (!video || !video.duration) return;
       progress.hidden = false;
       progress.firstChild.style.width = (video.currentTime / video.duration * 100) + '%';
     });
@@ -240,9 +255,11 @@ export function buildPlayer(id, ctx) {
     /* כתובת חתומה שפגה — מרעננים פעם אחת; לא הצליח — חוזרים ל-1ג׳ */
     let retried = false;
     video.onerror = async () => {
+      if (!video) return;
       if (retried) { toVideoOut(); return; }
       retried = true;
       const fresh = await refreshMedia(v.url);
+      if (!video) return;
       if (fresh.media && fresh.media !== video.src) {
         if (owner) updateVideo(v.id, { media: fresh.media });
         video.src = fresh.media;
@@ -250,21 +267,20 @@ export function buildPlayer(id, ctx) {
         video.play().catch(() => {});
         return;
       }
-      toVideoOut();
+      toVideoOut(fresh.blocked);
     };
     stage.textContent = '';
     stage.appendChild(video);
     video.play().catch(() => layer.classList.add('paused'));
   };
-  const toVideoOut = () => {
+  /* blocked: הנגן שלהם לא יעזור — רק ישלח אליהם, ולכן לא נופלים אליו */
+  const toVideoOut = blocked => {
     if (video) { video.remove(); video = null; }
     progress.hidden = true;
-    if (fallback) { mode = 'embed'; playEmbed(fallback); paintRail(); return; }
-    mode = 'out';
-    if (video) { video.remove(); video = null; }
+    if (!blocked && fallback) { mode = 'embed'; playEmbed(fallback); paintRail(); return; }
+    mode = blocked ? 'blocked' : 'out';
     stage.textContent = '';
     stage.appendChild(cover);
-    progress.hidden = true;
     paintCover();
     paintRail();
   };
@@ -295,8 +311,9 @@ export function buildPlayer(id, ctx) {
     if (!mode) {
       await resolve();
       /* אחרי המתנה לרשת הדפדפן כבר לא מתייחס לזה כלחיצה, ולא יפתח חלון —
-         מתברר שאין קובץ? התווית "מתנגן באינסטגרם" מופיעה, ולוחצים שוב */
-      if (mode === 'out') return;
+         מתברר שאין קובץ? התווית "מתנגן באינסטגרם" מופיעה, ולוחצים שוב.
+         חסום — ההסבר מופיע במקום ▶ */
+      if (mode === 'out' || mode === 'blocked') return;
     }
     if (mode === 'file') playFile(v.media);
     else if (mode === 'embed') playEmbed(embed || fallback);
@@ -365,8 +382,9 @@ export function buildPlayer(id, ctx) {
   const rail = el('div.side');
   const paintRail = () => {
     rail.textContent = '';
-    /* ב-1ג׳ ▶ כבר פותח את אינסטגרם, ואין צורך בשני כפתורים לאותו מקום */
-    if (mode !== 'out') rail.appendChild(railBtn('ext', name, null, v.url));
+    /* ב-1ג׳ ▶ כבר פותח את אינסטגרם, ובחסום יש "פתיחה באינסטגרם" באמצע —
+       אין צורך בשני כפתורים לאותו מקום */
+    if (mode !== 'out' && mode !== 'blocked') rail.appendChild(railBtn('ext', name, null, v.url));
     if (owner) rail.appendChild(railBtn('pen', 'עריכה', () => { shutAll(); ctx.onEdit(v); }));
     rail.appendChild(railBtn('dots', 'עוד', () => openMenu()));
   };
