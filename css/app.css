@@ -394,26 +394,44 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .progress .bubble { display: none; position: absolute; bottom: 16px; left: 0; transform: translateX(-50%); padding: .15rem .6rem; border-radius: 10px; white-space: nowrap;
   font-size: .8rem; font-weight: 600; color: #fff; background: rgba(10, 16, 28, .82); border: 1px solid rgba(255, 255, 255, .18); }
 .progress .times { display: none; position: absolute; left: 14px; right: 14px; bottom: 21px; justify-content: space-between; font-size: .74rem; color: rgba(255, 255, 255, .85); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
-.player.paused .progress .track, .player.seeking .progress .track { left: 12px; right: 12px; bottom: 9px; height: 6px; border-radius: 6px; }
-.player.paused .progress .knob, .player.seeking .progress .knob { display: block; }
-.player.paused .progress .times { display: flex; }
+.player.paused .progress .track, .player.ctrl .progress .track, .player.seeking .progress .track { left: 12px; right: 12px; bottom: 9px; height: 6px; border-radius: 6px; }
+.player.paused .progress .knob, .player.ctrl .progress .knob, .player.seeking .progress .knob { display: block; }
+.player.paused .progress .times, .player.ctrl .progress .times { display: flex; }
 .player.seeking .progress .times { display: none; }
 .player.seeking .progress .bubble { display: block; }
 /* הכיתוב והעמודה עולים, כדי לפנות מקום לזמן ולקו העבה */
 .cap, .side { transition: bottom .15s; }
-.player.paused .cap, .player.seeking .cap { bottom: calc(50px + env(safe-area-inset-bottom)); }
-.player.paused .side, .player.seeking .side { bottom: calc(54px + env(safe-area-inset-bottom)); }
-/* עצירה: ▶ ומשני צדיו 10 שניות — אחורה משמאל, קדימה מימין, כמו הזמן */
+.player.paused .cap, .player.ctrl .cap, .player.seeking .cap { bottom: calc(50px + env(safe-area-inset-bottom)); }
+.player.paused .side, .player.ctrl .side, .player.seeking .side { bottom: calc(54px + env(safe-area-inset-bottom)); }
+/* הפקדים: ▶/❚❚ ומשני צדיו 10 שניות — אחורה משמאל, קדימה מימין, כמו הזמן.
+   בעצירה תמיד, ובניגון אחרי נגיעה (ctrl) */
 .mid { display: none; position: absolute; z-index: 3; left: 50%; top: 46%; transform: translate(-50%, -50%); align-items: center; gap: 1.4rem; direction: ltr; }
-.player.paused .mid { display: flex; }
+.player.paused .mid, .player.ctrl .mid { display: flex; }
 .player.seeking .mid, .player.reading .mid { display: none; }
 .mid .resume { width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; color: #E8B931; border: 1.5px solid rgba(232, 185, 49, .4);
   background: rgba(10, 16, 28, .55); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
-.mid .resume svg { width: 24px; height: 24px; margin-left: 3px; }
+.mid .resume svg { width: 24px; height: 24px; }
+.mid .resume .pl { margin-left: 3px; }
+.player.paused .mid .resume .pz, .player:not(.paused) .mid .resume .pl { display: none; }
 .mid .skip { position: relative; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: #fff;
   background: rgba(10, 16, 28, .5); border: 1px solid rgba(255, 255, 255, .22); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
 .mid .skip svg { width: 34px; height: 34px; }
 .mid .skip span { position: absolute; padding-top: 2px; font-size: .66rem; font-weight: 700; }
+/* נגיעה כפולה: חצי עיגול בהיר בצד, החץ וכמה שניות. לחיצה ארוכה: 2× למעלה */
+.stage { touch-action: manipulation; }
+.stage > video { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+.seekhint { position: absolute; z-index: 3; top: 22%; bottom: 30%; width: 36%; left: 0; border-radius: 0 50% 50% 0 / 0 50% 50% 0; display: grid; place-content: center; justify-items: center; gap: .35rem;
+  color: #fff; background: rgba(255, 255, 255, .14); opacity: 0; transition: opacity .25s; pointer-events: none; text-shadow: 0 1px 3px rgba(0, 0, 0, .5); }
+.seekhint.fwd { left: auto; right: 0; border-radius: 50% 0 0 50% / 50% 0 0 50%; }
+.seekhint.on { opacity: 1; transition: none; }
+.seekhint svg { width: 34px; height: 34px; }
+.seekhint .f, .seekhint.fwd .b { display: none; }
+.seekhint.fwd .f { display: block; }
+.seekhint span { font-size: .85rem; font-weight: 700; }
+.fasttag { display: none; position: absolute; z-index: 3; top: calc(64px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); align-items: center; gap: .3rem; direction: ltr;
+  padding: .3rem .85rem; border-radius: 999px; color: #fff; font-weight: 700; font-size: .9rem; background: rgba(10, 16, 28, .72); border: 1px solid rgba(255, 255, 255, .18); pointer-events: none; }
+.fasttag svg { width: 15px; height: 15px; }
+.player.fast .fasttag { display: inline-flex; }
 /* מסך מלא: כל מה שצף יורד, וכפתור יציאה קטן בפינה */
 .player .exit-full { display: none; position: absolute; z-index: 4; top: calc(12px + env(safe-area-inset-top)); inset-inline-end: calc(12px + env(safe-area-inset-left, 0px)); }
 .player.immersive .topov, .player.immersive .cap, .player.immersive .side, .player.immersive .scrim-b, .player.immersive .scrim-t { display: none; }

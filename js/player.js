@@ -10,8 +10,10 @@
    · באינסטגרם, בפייסבוק ובטיקטוק מנגנים את קובץ הווידאו עצמו. כשאין קובץ —
      הנגן שלהם, בתוך האפליקציה (1.0.12; ב-1ג׳ ▶ יצא לאינסטגרם, וזה קרה כמעט
      תמיד). רק כשאין גם נגן — ▶ פותח את הסרטון אצלם.
-   · בקובץ שלנו: נגיעה עוצרת וממשיכה; כשעוצרים — 10 שניות אחורה וקדימה, והקו
-     בתחתית נגרר גם בזמן ניגון. משמאל לימין, כמו בכל נגן (1.0.18).
+   · בקובץ שלנו, כמו ביוטיוב (1.0.19): נגיעה מראה את הפקדים והסרטון ממשיך —
+     10 שניות אחורה וקדימה, עצירה, והקו בתחתית נגרר. נגיעה כפולה בצד ימין —
+     10 קדימה, בשמאל — 10 אחורה. לחיצה ארוכה — מהירות כפולה. הזמן משמאל
+     לימין, כמו בכל נגן (1.0.18).
    · רילס שאינסטגרם חוסמת מחוץ לה (זכויות, כמעט תמיד על המוזיקה): אין קובץ,
      והנגן שלה רק שולח אליה בלחיצה. לכן במקומו — התמונה, הסבר, ו"פתיחה
      באינסטגרם" כבחירה (1.0.17; הבדיקה ב-preview.js, igMedia).
@@ -261,8 +263,8 @@ export function buildPlayer(id, ctx) {
       progress.hidden = false;
       if (!dragging) paintTime(video.currentTime);
     });
-    video.addEventListener('pause', () => layer.classList.add('paused'));
-    video.addEventListener('play', () => layer.classList.remove('paused'));
+    video.addEventListener('pause', () => { layer.classList.add('paused'); toggleBtn.setAttribute('aria-label', 'המשך ניגון'); });
+    video.addEventListener('play', () => { layer.classList.remove('paused'); toggleBtn.setAttribute('aria-label', 'עצירה'); });
     /* כתובת חתומה שפגה — מרעננים פעם אחת; לא הצליח — חוזרים ל-1ג׳ */
     let retried = false;
     video.onerror = async () => {
@@ -349,6 +351,7 @@ export function buildPlayer(id, ctx) {
     if (!video) return;
     if (commit) seekTo(timeAt(e.clientX), true);
     if (resume) video.play().catch(() => {});
+    showCtrl();
   };
   progress.addEventListener('pointerup', e => endDrag(e, true));
   /* בלי commit: בביטול (שיחה נכנסת, מחווה של המערכת) המיקום של האצבע לא אמין */
@@ -359,11 +362,40 @@ export function buildPlayer(id, ctx) {
     e.preventDefault();
     jump(step);
   });
-  /* כשעוצרים: אחורה משמאל, ▶ באמצע, קדימה מימין */
+  /* --- הפקדים: אחורה משמאל, ▶/❚❚ באמצע, קדימה מימין ---
+     בעצירה תמיד; בניגון — אחרי נגיעה, ונעלמים אחרי שלוש שניות בלי מגע. כך
+     10 השניות עובדות בלי לעצור (בעל הריפו: "צריך לאפשר אותה כשהסרטון רץ"). */
+  let ctrlTimer = 0;
+  const showCtrl = () => {
+    layer.classList.add('ctrl');
+    clearTimeout(ctrlTimer);
+    ctrlTimer = setTimeout(() => { if (!dragging) layer.classList.remove('ctrl'); }, 3000);
+  };
+  const hideCtrl = () => { clearTimeout(ctrlTimer); layer.classList.remove('ctrl'); };
+  const toggle = () => {
+    if (!video) return;
+    if (video.paused) video.play().catch(() => {}); else video.pause();
+    showCtrl();
+  };
+  const toggleBtn = el('button.resume', { type: 'button', 'aria-label': 'עצירה', onclick: toggle }, icon('play', 'pl'), icon('pause', 'pz'));
   const mid = el('div.mid', null,
-    el('button.skip', { type: 'button', 'aria-label': '10 שניות אחורה', onclick: () => jump(-10) }, icon('back10'), el('span.num', { text: '10' })),
-    el('button.resume', { type: 'button', 'aria-label': 'המשך ניגון', onclick: () => { if (video) video.play().catch(() => {}); } }, icon('play')),
-    el('button.skip', { type: 'button', 'aria-label': '10 שניות קדימה', onclick: () => jump(10) }, icon('fwd10'), el('span.num', { text: '10' })));
+    el('button.skip', { type: 'button', 'aria-label': '10 שניות אחורה', onclick: () => { jump(-10); showCtrl(); } }, icon('back10'), el('span.num', { text: '10' })),
+    toggleBtn,
+    el('button.skip', { type: 'button', 'aria-label': '10 שניות קדימה', onclick: () => { jump(10); showCtrl(); } }, icon('fwd10'), el('span.num', { text: '10' })));
+
+  /* מה שקרה בנגיעה כפולה ובלחיצה ארוכה — רואים מיד, ונעלם */
+  const hint = el('div.seekhint', { 'aria-hidden': 'true' }, icon('fwd10', 'f'), icon('back10', 'b'), el('span.num'));
+  let hintTimer = 0;
+  const flash = (side, total) => {
+    hint.classList.toggle('fwd', side > 0);
+    hint.lastChild.textContent = total + ' שניות';
+    hint.classList.remove('on');
+    void hint.offsetWidth;
+    hint.classList.add('on');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => hint.classList.remove('on'), 700);
+  };
+  const fastTag = el('div.fasttag', { 'aria-hidden': 'true' }, el('span.num', { text: '2×' }), icon('ff'));
 
   const playEmbed = src => {
     const frame = el('iframe', { src, title: v.title, allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share', allowFullscreen: true });
@@ -399,11 +431,70 @@ export function buildPlayer(id, ctx) {
     if (mode === 'file') playFile(v.media);
     else if (mode === 'embed') playEmbed(embed || fallback);
   };
-  /* נגיעה בסרטון שמתנגן עוצרת וממשיכה — כמו ברילס */
-  stage.addEventListener('click', e => {
-    if (!video || e.target !== video) return;
-    if (video.paused) video.play().catch(() => {}); else video.pause();
+  /* --- מחוות על הסרטון, כמו ביוטיוב ---
+     נגיעה: הפקדים מופיעים או נעלמים (ובעצירה — ממשיכים). נגיעה כפולה: ימין
+     10 קדימה, שמאל 10 אחורה, וכל נגיעה נוספת מיד אחריה — עוד 10. לחיצה
+     ארוכה: מהירות כפולה כל עוד האצבע על המסך. הנגיעה הבודדת מחכה רגע
+     (TAP), כדי לדעת שלא באה אחריה שנייה. כשהמתכון פתוח — הנגיעה סוגרת אותו
+     (למטה), ולכן כאן לא עושים כלום. */
+  const TAP = 300;
+  const HOLD = 450;
+  let lastTap = null;
+  let tapTimer = 0;
+  let streak = null;
+  let holdTimer = 0;
+  let holding = false;
+  const onVideo = e => video && e.target === video && !recipe;
+  const sideOf = x => { const r = stage.getBoundingClientRect(); return x - r.left > r.width / 2 ? 1 : -1; };
+  const stopHold = () => {
+    clearTimeout(holdTimer);
+    if (holding && video) video.playbackRate = 1;
+    holding = false;
+    layer.classList.remove('fast');
+  };
+  stage.addEventListener('pointerdown', e => {
+    if (!onVideo(e)) return;
+    stopHold();
+    if (!video.paused) holdTimer = setTimeout(() => {
+      if (!video) return;
+      holding = true;
+      video.playbackRate = 2;
+      layer.classList.add('fast');
+    }, HOLD);
   });
+  stage.addEventListener('pointerup', e => {
+    if (!onVideo(e)) { stopHold(); return; }
+    const held = holding;
+    stopHold();
+    if (held) return;
+    const now = Date.now();
+    const side = sideOf(e.clientX);
+    if (streak && streak.side === side && now - streak.at < 800) {
+      clearTimeout(tapTimer); lastTap = null;
+      streak.at = now; streak.total += 10;
+      jump(10 * side); flash(side, streak.total);
+      return;
+    }
+    if (lastTap && lastTap.side === side && now - lastTap.at < TAP) {
+      clearTimeout(tapTimer); lastTap = null;
+      streak = { side, at: now, total: 10 };
+      jump(10 * side); flash(side, 10);
+      return;
+    }
+    streak = null;
+    lastTap = { side, at: now };
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(() => {
+      lastTap = null;
+      if (!video) return;
+      if (video.paused) toggle();
+      else if (layer.classList.contains('ctrl')) hideCtrl();
+      else showCtrl();
+    }, TAP);
+  });
+  stage.addEventListener('pointercancel', stopHold);
+  /* לחיצה ארוכה באייפון פותחת תפריט של המערכת על הסרטון */
+  stage.addEventListener('contextmenu', e => { if (video && e.target === video) e.preventDefault(); });
 
   /* --- מסך מלא: מסתיר את כל מה שצף, ובאייפון — המסך המלא של המערכת --- */
   let immersive = false;
@@ -577,7 +668,7 @@ export function buildPlayer(id, ctx) {
     else if (recipe) recipe.close();
     else close();
   });
-  layer.append(stage, el('div.scrim-t'), el('div.scrim-b'), topov, cap, rail, progress, mid, exitFull);
+  layer.append(stage, el('div.scrim-t'), el('div.scrim-b'), hint, fastTag, topov, cap, rail, progress, mid, exitFull);
   document.body.appendChild(layer);
   shut.focus();
 
