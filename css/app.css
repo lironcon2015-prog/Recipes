@@ -363,9 +363,6 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 /* רילס שאינסטגרם חוסמת מחוץ לה: הסבר במקום ▶. הנגן שחור בשתי הערכות */
 .cta .why { margin: 0; max-width: 30ch; padding: .7rem .95rem; border-radius: 16px; text-align: center; font-size: .9rem; line-height: 1.45; color: #fff;
   background: rgba(10, 16, 28, .72); border: 1px solid rgba(255, 255, 255, .16); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
-.player.paused .stage::after { content: ""; position: absolute; left: 50%; top: 46%; width: 76px; height: 76px; margin: -38px 0 0 -38px; border-radius: 50%;
-  background: rgba(10, 16, 28, .55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7 4v16l13-8z' fill='%23E8B931'/%3E%3C/svg%3E") 54% 50% / 24px no-repeat;
-  border: 1.5px solid rgba(232, 185, 49, .4); pointer-events: none; }
 .scrim-t { position: absolute; inset: 0 0 auto; height: calc(110px + env(safe-area-inset-top)); background: linear-gradient(rgba(0, 0, 0, .5), transparent); pointer-events: none; }
 .scrim-b { position: absolute; inset: auto 0 0; height: 55%; background: linear-gradient(transparent, rgba(0, 0, 0, .5) 40%, rgba(0, 0, 0, .86)); pointer-events: none; }
 .ibtn { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; color: #fff; text-decoration: none;
@@ -385,8 +382,38 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .side { position: absolute; z-index: 3; inset-inline-end: max(10px, env(safe-area-inset-left, 0px)); bottom: calc(30px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: .9rem; align-items: center; }
 .side .rb { display: grid; justify-items: center; gap: 3px; font-size: .66rem; font-weight: 700; color: #fff; text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
 .side .ibtn { width: 44px; height: 44px; }
-.progress { position: absolute; z-index: 3; inset-inline: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, .2); }
-.progress i { display: block; width: 0; height: 100%; background: #E8B931; }
+/* הזמן — משמאל לימין גם בעברית, כמו בכל נגן. בניגון: קו דק; בעצירה ובגרירה:
+   קו עבה עם ידית. אזור הנגיעה גבוה מהקו, כדי שלא צריך לכוון, ויושב מעל פס
+   הבית של האייפון — שם גרירה לרוחב מחליפה אפליקציה. */
+.progress { position: absolute; z-index: 3; left: 0; right: 0; bottom: env(safe-area-inset-bottom, 0px); height: 24px; direction: ltr; touch-action: none; cursor: pointer; }
+.progress:focus-visible { outline-offset: -2px; }
+.progress .track { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, .22); transition: left .15s, right .15s, bottom .15s, height .15s; }
+.progress .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: #E8B931; border-radius: inherit; }
+.progress .knob { display: none; position: absolute; top: 50%; left: 0; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%; background: #E8B931;
+  box-shadow: 0 0 0 4px rgba(232, 185, 49, .25), 0 2px 6px rgba(0, 0, 0, .5); }
+.progress .bubble { display: none; position: absolute; bottom: 16px; left: 0; transform: translateX(-50%); padding: .15rem .6rem; border-radius: 10px; white-space: nowrap;
+  font-size: .8rem; font-weight: 600; color: #fff; background: rgba(10, 16, 28, .82); border: 1px solid rgba(255, 255, 255, .18); }
+.progress .times { display: none; position: absolute; left: 14px; right: 14px; bottom: 21px; justify-content: space-between; font-size: .74rem; color: rgba(255, 255, 255, .85); text-shadow: 0 1px 2px rgba(0, 0, 0, .5); }
+.player.paused .progress .track, .player.seeking .progress .track { left: 12px; right: 12px; bottom: 9px; height: 6px; border-radius: 6px; }
+.player.paused .progress .knob, .player.seeking .progress .knob { display: block; }
+.player.paused .progress .times { display: flex; }
+.player.seeking .progress .times { display: none; }
+.player.seeking .progress .bubble { display: block; }
+/* הכיתוב והעמודה עולים, כדי לפנות מקום לזמן ולקו העבה */
+.cap, .side { transition: bottom .15s; }
+.player.paused .cap, .player.seeking .cap { bottom: calc(50px + env(safe-area-inset-bottom)); }
+.player.paused .side, .player.seeking .side { bottom: calc(54px + env(safe-area-inset-bottom)); }
+/* עצירה: ▶ ומשני צדיו 10 שניות — אחורה משמאל, קדימה מימין, כמו הזמן */
+.mid { display: none; position: absolute; z-index: 3; left: 50%; top: 46%; transform: translate(-50%, -50%); align-items: center; gap: 1.4rem; direction: ltr; }
+.player.paused .mid { display: flex; }
+.player.seeking .mid, .player.reading .mid { display: none; }
+.mid .resume { width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; color: #E8B931; border: 1.5px solid rgba(232, 185, 49, .4);
+  background: rgba(10, 16, 28, .55); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.mid .resume svg { width: 24px; height: 24px; margin-left: 3px; }
+.mid .skip { position: relative; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+  background: rgba(10, 16, 28, .5); border: 1px solid rgba(255, 255, 255, .22); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.mid .skip svg { width: 34px; height: 34px; }
+.mid .skip span { position: absolute; padding-top: 2px; font-size: .66rem; font-weight: 700; }
 /* מסך מלא: כל מה שצף יורד, וכפתור יציאה קטן בפינה */
 .player .exit-full { display: none; position: absolute; z-index: 4; top: calc(12px + env(safe-area-inset-top)); inset-inline-end: calc(12px + env(safe-area-inset-left, 0px)); }
 .player.immersive .topov, .player.immersive .cap, .player.immersive .side, .player.immersive .scrim-b, .player.immersive .scrim-t { display: none; }

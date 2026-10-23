@@ -10,6 +10,8 @@
    · באינסטגרם, בפייסבוק ובטיקטוק מנגנים את קובץ הווידאו עצמו. כשאין קובץ —
      הנגן שלהם, בתוך האפליקציה (1.0.12; ב-1ג׳ ▶ יצא לאינסטגרם, וזה קרה כמעט
      תמיד). רק כשאין גם נגן — ▶ פותח את הסרטון אצלם.
+   · בקובץ שלנו: נגיעה עוצרת וממשיכה; כשעוצרים — 10 שניות אחורה וקדימה, והקו
+     בתחתית נגרר גם בזמן ניגון. משמאל לימין, כמו בכל נגן (1.0.18).
    · רילס שאינסטגרם חוסמת מחוץ לה (זכויות, כמעט תמיד על המוזיקה): אין קובץ,
      והנגן שלה רק שולח אליה בלחיצה. לכן במקומו — התמונה, הסבר, ו"פתיחה
      באינסטגרם" כבחירה (1.0.17; הבדיקה ב-preview.js, igMedia).
@@ -172,7 +174,16 @@ export function buildPlayer(id, ctx) {
   const layer = el('div.player', { role: 'dialog', 'aria-modal': 'true', 'aria-label': v.title });
   const stage = el('div.stage');
   const still = posterCandidates(v, ctx.posterUrls.get(v.id))[0];
-  const progress = el('div.progress', { hidden: true }, el('i'));
+  /* הזמן: קו שאפשר לגרור, ו-10 שניות אחורה וקדימה כשעוצרים. משמאל לימין גם
+     בעברית — כך זמן זורם בכל נגן (בעל הריפו: "בדרך כלל זה משמאל לימין").
+     רק בקובץ שלנו: בנגן של אינסטגרם הפקדים שלה. */
+  const fill = el('i');
+  const knob = el('span.knob');
+  const bubble = el('span.bubble.num');
+  const nowAt = el('span.num');
+  const total = el('span.num');
+  const progress = el('div.progress', { hidden: true, role: 'slider', tabindex: '0', 'aria-label': 'מיקום בסרטון', 'aria-valuemin': '0' },
+    el('div.track', null, fill, knob, bubble), el('div.times', null, nowAt, total));
 
   let offKey = null;
   let video = null;
@@ -248,7 +259,7 @@ export function buildPlayer(id, ctx) {
     video.addEventListener('timeupdate', () => {
       if (!video || !video.duration) return;
       progress.hidden = false;
-      progress.firstChild.style.width = (video.currentTime / video.duration * 100) + '%';
+      if (!dragging) paintTime(video.currentTime);
     });
     video.addEventListener('pause', () => layer.classList.add('paused'));
     video.addEventListener('play', () => layer.classList.remove('paused'));
@@ -277,6 +288,8 @@ export function buildPlayer(id, ctx) {
   const toVideoOut = blocked => {
     if (video) { video.remove(); video = null; }
     progress.hidden = true;
+    dragging = false;
+    layer.classList.remove('paused', 'seeking');
     if (!blocked && fallback) { mode = 'embed'; playEmbed(fallback); paintRail(); return; }
     mode = blocked ? 'blocked' : 'out';
     stage.textContent = '';
@@ -284,6 +297,74 @@ export function buildPlayer(id, ctx) {
     paintCover();
     paintRail();
   };
+  /* --- הזמן --- */
+  const clock = sec => {
+    const n = Math.max(0, Math.floor(sec || 0));
+    return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0');
+  };
+  const paintTime = t => {
+    if (!video || !video.duration) return;
+    const d = video.duration;
+    const at = Math.min(100, Math.max(0, t / d * 100)) + '%';
+    fill.style.width = at; knob.style.left = at; bubble.style.left = at;
+    nowAt.textContent = clock(t); total.textContent = clock(d);
+    bubble.textContent = clock(t) + ' / ' + clock(d);
+    progress.setAttribute('aria-valuemax', String(Math.round(d)));
+    progress.setAttribute('aria-valuenow', String(Math.round(t)));
+    progress.setAttribute('aria-valuetext', clock(t) + ' מתוך ' + clock(d));
+  };
+  const jump = sec => {
+    if (!video || !video.duration) return;
+    video.currentTime = Math.min(video.duration - 0.05, Math.max(0, video.currentTime + sec));
+    paintTime(video.currentTime);
+  };
+  /* גרירה: הסרטון נעצר בזמן הגרירה וממשיך אחריה, אם ניגן. fastSeek (סאפרי)
+     קופץ למסגרת הקרובה — מהיר תוך כדי; בשחרור — הזמן המדויק. */
+  let dragging = false;
+  let resume = false;
+  const timeAt = x => {
+    const r = progress.firstChild.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (x - r.left) / r.width)) * video.duration;
+  };
+  const seekTo = (t, exact) => {
+    if (!exact && video.fastSeek) video.fastSeek(t); else video.currentTime = t;
+    paintTime(t);
+  };
+  progress.addEventListener('pointerdown', e => {
+    if (!video || !video.duration) return;
+    e.preventDefault();
+    dragging = true;
+    resume = !video.paused;
+    /* הקו מתעבה לפני החישוב — המיקום נמדד על הקו שרואים */
+    layer.classList.add('seeking');
+    try { progress.setPointerCapture(e.pointerId); } catch (err) { /* דפדפן ישן — הגרירה עובדת גם בלי */ }
+    video.pause();
+    seekTo(timeAt(e.clientX));
+  });
+  progress.addEventListener('pointermove', e => { if (dragging && video) seekTo(timeAt(e.clientX)); });
+  const endDrag = (e, commit) => {
+    if (!dragging) return;
+    dragging = false;
+    layer.classList.remove('seeking');
+    if (!video) return;
+    if (commit) seekTo(timeAt(e.clientX), true);
+    if (resume) video.play().catch(() => {});
+  };
+  progress.addEventListener('pointerup', e => endDrag(e, true));
+  /* בלי commit: בביטול (שיחה נכנסת, מחווה של המערכת) המיקום של האצבע לא אמין */
+  progress.addEventListener('pointercancel', e => endDrag(e, false));
+  progress.addEventListener('keydown', e => {
+    const step = e.key === 'ArrowRight' ? 5 : e.key === 'ArrowLeft' ? -5 : 0;
+    if (!step) return;
+    e.preventDefault();
+    jump(step);
+  });
+  /* כשעוצרים: אחורה משמאל, ▶ באמצע, קדימה מימין */
+  const mid = el('div.mid', null,
+    el('button.skip', { type: 'button', 'aria-label': '10 שניות אחורה', onclick: () => jump(-10) }, icon('back10'), el('span.num', { text: '10' })),
+    el('button.resume', { type: 'button', 'aria-label': 'המשך ניגון', onclick: () => { if (video) video.play().catch(() => {}); } }, icon('play')),
+    el('button.skip', { type: 'button', 'aria-label': '10 שניות קדימה', onclick: () => jump(10) }, icon('fwd10'), el('span.num', { text: '10' })));
+
   const playEmbed = src => {
     const frame = el('iframe', { src, title: v.title, allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share', allowFullscreen: true });
     frame.referrerPolicy = 'strict-origin-when-cross-origin';
@@ -496,7 +577,7 @@ export function buildPlayer(id, ctx) {
     else if (recipe) recipe.close();
     else close();
   });
-  layer.append(stage, el('div.scrim-t'), el('div.scrim-b'), topov, cap, rail, progress, exitFull);
+  layer.append(stage, el('div.scrim-t'), el('div.scrim-b'), topov, cap, rail, progress, mid, exitFull);
   document.body.appendChild(layer);
   shut.focus();
 
