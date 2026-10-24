@@ -166,6 +166,19 @@ export function closeAllLayers() {
   while (layers.length) layers[layers.length - 1].close(false);
 }
 
+/** העתקה ללוח. clipboard.writeText נדחה בכמה תצוגות של אפליקציות — אז מתיבה זמנית */
+export async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* לדרך הישנה */ }
+  const area = el('textarea', { readonly: true, style: 'position:fixed;top:0;opacity:0' });
+  area.value = text;
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { /* אין */ }
+  area.remove();
+  return ok;
+}
+
 export function onEscape(fn) {
   const h = e => { if (e.key === 'Escape') fn(); };
   document.addEventListener('keydown', h);

@@ -20,7 +20,7 @@ import { needsResolve, lookup, fetchPoster } from './preview.js';
 import * as cloud from './cloud.js';
 import * as posters from './posters.js';
 import { state as sync, syncNow, onSync, autoOn } from './sync.js';
-import { $, el, icon, toast, whenText, agoText, sheet, afterLayers, readClipboard } from './ui.js';
+import { $, el, icon, toast, whenText, agoText, sheet, afterLayers, readClipboard, copyText } from './ui.js';
 import { VERSION } from './version.js';
 import { buildPlayer, summary, AI_PROMPT } from './player.js';
 
@@ -287,22 +287,9 @@ function paintAll() {
    המתכון כמו שהוא; מה שחוזר — בפורמט שהמתכון קורא (ערכים ל-100 גרם, לכל המנה) */
 function aiCopy() {
   return el('button.ai-copy', { type: 'button', onclick: async () => {
-    let ok = false;
-    try { await navigator.clipboard.writeText(AI_PROMPT); ok = true; } catch (e) { ok = copyByHand(AI_PROMPT); }
+    const ok = await copyText(AI_PROMPT);
     toast(ok ? 'ההנחיה הועתקה. מדביקים אותה בג׳מיני או בקלוד, ומתחתיה את המתכון.' : 'לא הצלחנו להעתיק — נסה שוב');
   } }, icon('clip'), el('span', null, el('b', { text: 'העתקת ההנחיה ל-AI' }), el('small', { text: 'ערכים ל-100 גרם, למנה ולכל המנה — בפורמט שהאפליקציה קוראת' })));
-}
-
-/* clipboard.writeText נדחה בכמה תצוגות של אפליקציות — העתקה מתיבה זמנית */
-function copyByHand(text) {
-  const area = el('textarea', { readonly: true, style: 'position:fixed;top:0;opacity:0' });
-  area.value = text;
-  document.body.appendChild(area);
-  area.select();
-  let ok = false;
-  try { ok = document.execCommand('copy'); } catch (e) { /* אין */ }
-  area.remove();
-  return ok;
 }
 
 export function openEditor(prefill, video) {
