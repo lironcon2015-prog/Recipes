@@ -1,0 +1,5 @@
+# נפרס מגיטהאב על ידי קלאודפלייר (Workers Builds, תיקיית שורש: server) בכל דחיפה ל-main.
+# המדריך: README.md, "שרת הסרטונים בקלאודפלייר". השם חייב להישאר "media" — השם בלוח הבקרה.
+name = "media"
+main = "worker.js"
+compatibility_date = "2026-07-01"
