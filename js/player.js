@@ -37,6 +37,8 @@ const FETCHABLE = new Set(['facebook', 'instagram', 'tiktok', 'youtube', 'x', 'v
    — רכיב; במספר — שלב; "קלוריות: … | חלבון: …" — ערכים. כל השאר פסקה. */
 const BULLET = /^\s*[*\-•·‣▪●◦]\s*/;
 const STEP = /^\s*\d{1,2}[.)]\s+/;
+const SERVINGS = /^(?:מספר\s+)?מנות\s*[:：]\s*([\d.,]+)/;
+const WEIGHT = /^משקל(?:\s+כולל)?\s*[:：]\s*([\d.,]+)\s*(ק"ג|ק״ג|קילו)?/;
 const QTY = /^((?:כ-?\s*)?[\d½¼¾⅓⅔.,/\-–]+\s*(?:ק"ג|ק״ג|גרם|ג׳|ג'|ג\b|מ"ל|מ״ל|מל|ליטר|כפיות|כפית|כפות|כף|כוסות|כוס|יחידות|יח׳|ביצים|ביצה)?)\s+/;
 
 export function parseNote(text) {
@@ -53,12 +55,17 @@ export function parseNote(text) {
       return;
     }
     list = null;
+    const sv = line.match(SERVINGS);
+    if (sv) { blocks.push({ type: 'meta', servings: num(sv[1]) }); return; }
+    const wt = line.match(WEIGHT);
+    if (wt) { blocks.push({ type: 'meta', weight: num(wt[1]) * (wt[2] ? 1000 : 1) }); return; }
     const parts = line.split(/\s*\|\s*/).filter(Boolean);
     if (parts.length > 1 && parts.filter(p => p.includes(':')).length >= 2) {
       /* "ערכים תזונתיים לכל המנה: קלוריות: כ-195" — הכותרת לפני הזוג הראשון */
       const first = parts[0].split(':');
-      if (first.length > 2) parts[0] = first.slice(1).join(':').trim();
-      blocks.push({ type: 'facts', list: parts.map(p => {
+      let label = '';
+      if (first.length > 2) { label = first[0].trim(); parts[0] = first.slice(1).join(':').trim(); }
+      blocks.push({ type: 'facts', label, basis: basisOf(label), list: parts.map(p => {
         const at = p.indexOf(':');
         return at > 0 ? { k: p.slice(0, at).trim(), v: p.slice(at + 1).trim() } : { k: '', v: p };
       }) });
@@ -70,10 +77,66 @@ export function parseNote(text) {
   return blocks;
 }
 
+/* --- הערכים התזונתיים ---
+   שלושה בסיסים: ל-100 גרם, למנה, לכל המנה (הפורמט — AI_PROMPT). מה שחסר ואפשר
+   לחשב — מחושב: למנה מכל המנה חלקי המנות, ל-100 גרם מכל המנה והמשקל, וכל המנה
+   מהמנה כפול המנות. שורת ערכים בלי כותרת מוכרת — מוצגת כמו פעם. */
+export const BASES = [['g100', 'ל-100 גרם'], ['serving', 'למנה'], ['total', 'כל המנה']];
+const BASIS_KEY = 'rc:basis';
+const MAIN = ['קלורי', 'חלבון', 'פחמימ', 'שומן'];
+
+function basisOf(label) {
+  if (/100/.test(label)) return 'g100';
+  if (/כל\s*ה?מנה|כל\s*המתכון|סה"?כ|סה״כ/.test(label)) return 'total';
+  if (/למנה|מנה\s*אחת|לסועד/.test(label)) return 'serving';
+  return null;
+}
+
+function num(text) { return parseFloat(String(text).replace(/,/g, '')) || 0; }
+
+/* 2160 → "2,160"; 9.04 → "9" ; 0.45 → "0.5" */
+function fmt(n) {
+  const r = n >= 10 ? Math.round(n) : Math.round(n * 10) / 10;
+  return r.toLocaleString('en-US');
+}
+
+function scale(list, factor) {
+  return list.map(f => {
+    const m = f.v.match(/^(כ-?\s*)?([\d.,]+)(.*)$/);
+    return m ? { k: f.k, v: fmt(num(m[2]) * factor) + m[3] } : f;
+  });
+}
+
+export function nutrition(blocks) {
+  const meta = {};
+  blocks.filter(b => b.type === 'meta').forEach(b => Object.assign(meta, b.servings ? { servings: b.servings } : { weight: b.weight }));
+  const by = {};
+  blocks.filter(b => b.type === 'facts' && b.basis).forEach(b => { if (!by[b.basis]) by[b.basis] = { list: b.list }; });
+  const n = meta.servings, w = meta.weight;
+  if (!by.total && by.serving && n) by.total = { list: scale(by.serving.list, n), computed: true };
+  if (!by.serving && by.total && n > 1) by.serving = { list: scale(by.total.list, 1 / n), computed: true };
+  if (!by.g100 && by.total && w) by.g100 = { list: scale(by.total.list, 100 / w), computed: true };
+  return { by, meta, bases: BASES.filter(([k]) => by[k]) };
+}
+
+export function readBasis(bases) {
+  let pref = null;
+  try { pref = localStorage.getItem(BASIS_KEY); } catch (e) { /* פרטי — ברירת המחדל */ }
+  return bases.some(([k]) => k === pref) ? pref : bases[0][0];
+}
+function saveBasis(k) { try { localStorage.setItem(BASIS_KEY, k); } catch (e) { /* לא קריטי */ } }
+
+/* קלוריות, חלבון, פחמימות, שומן — בסדר הזה; השאר אחריהם */
+function ordered(list) {
+  const main = MAIN.map(m => list.find(f => f.k.includes(m))).filter(Boolean);
+  return { main, rest: list.filter(f => !main.includes(f)) };
+}
+
 /* "כ-195 קק"ל" → "195 קק"ל"; ערך עם יחידה ושם — "34 גרם חלבון" */
 function factText(f) {
   const v = f.v.replace(/^כ-?\s*/, '');
-  if (!f.k || /קלורי/.test(f.k)) return v;
+  if (/קלורי/.test(f.k)) return /^[\d.,]+$/.test(v) ? v + ' קלוריות' : v;
+  if (!f.k) return v;
   return v + ' ' + f.k;
 }
 
@@ -81,8 +144,15 @@ function factText(f) {
 export function summary(text) {
   const blocks = parseNote(text);
   const out = [];
-  const facts = blocks.find(b => b.type === 'facts');
-  if (facts) out.push(facts.list.map(factText).join(' · ') + '.');
+  const nut = nutrition(blocks);
+  if (nut.bases.length) {
+    const k = readBasis(nut.bases);
+    const { main } = ordered(nut.by[k].list);
+    out.push((k === 'g100' ? 'ל-100 ג׳: ' : k === 'serving' ? 'למנה: ' : 'לכל המנה: ') + main.slice(0, 2).map(factText).join(' · ') + '.');
+  } else {
+    const facts = blocks.find(b => b.type === 'facts');
+    if (facts) out.push(facts.list.map(factText).join(' · ') + '.');
+  }
   const items = blocks.find(b => b.type === 'items');
   if (items) {
     const at = blocks.indexOf(items);
@@ -102,13 +172,16 @@ const CHECK_KEY = id => 'rc:check:' + id;
 const readChecks = id => { try { return new Set(JSON.parse(localStorage.getItem(CHECK_KEY(id)) || '[]')); } catch (e) { return new Set(); } };
 const saveChecks = (id, set) => { try { localStorage.setItem(CHECK_KEY(id), JSON.stringify([...set])); } catch (e) { /* לא קריטי */ } };
 
-function recipeBody(v) {
+function recipeBody(v, onBasis) {
   const box = el('div.rbody');
   const blocks = parseNote(v.note);
   const checks = readChecks(v.id);
   let n = 0;
   let firstFacts = true;
+  const nut = nutrition(blocks);
+  if (nut.bases.length) { box.appendChild(nutPanel(nut, onBasis)); firstFacts = false; }
   blocks.forEach(b => {
+    if (b.type === 'meta' || (b.type === 'facts' && b.basis)) return;
     if (b.type === 'facts' && firstFacts) {
       firstFacts = false;
       const grid = el('div.nut');
@@ -153,6 +226,70 @@ function recipeBody(v) {
   }
   return box;
 }
+
+function nutCell(f, i) {
+  const v1 = f.v.replace(/^כ-?\s*/, '');
+  const m = v1.match(/^([\d.,]+)\s*(.*)$/);
+  return el('div' + (i === 0 && /קלורי/.test(f.k) ? '.k' : ''), null,
+    el('b.num', { text: m ? m[1] + (m[2] && !/קק/.test(m[2]) ? ' ' + m[2].replace('גרם', 'ג׳') : '') : v1 }),
+    el('small', { text: f.k || (m && m[2]) || '' }));
+}
+
+/** המתג (ל-100 גרם · למנה · כל המנה), ארבעת העיקריים, והשאר בשורה */
+function nutPanel(nut, onBasis) {
+  const wrap = el('div.nutp');
+  let cur = readBasis(nut.bases);
+  const seg = nut.bases.length > 1 ? el('div.tseg.nseg', { role: 'group', 'aria-label': 'הערכים לפי' }) : null;
+  const grid = el('div.nut');
+  const more = el('p.rp.nmore');
+  const basis = el('p.nbasis');
+  const { servings, weight } = nut.meta;
+  const paint = () => {
+    const b = nut.by[cur];
+    const { main, rest } = ordered(b.list);
+    grid.textContent = '';
+    main.forEach((f, i) => grid.appendChild(nutCell(f, i)));
+    grid.style.gridTemplateColumns = 'repeat(' + Math.max(main.length, 1) + ', minmax(0, 1fr))';
+    grid.hidden = !main.length;
+    const extra = main.length ? rest : b.list;
+    more.textContent = extra.map(f => (f.k ? f.k + ' ' : '') + f.v.replace(/^כ-?\s*/, '').replace('גרם', 'ג׳')).join(' · ');
+    more.hidden = !extra.length;
+    const parts = cur === 'serving' ? ['מנה אחת' + (servings ? ' מתוך ' + servings : ''), weight && servings ? fmt(weight / servings) + ' גרם' : '']
+      : cur === 'total' ? [servings ? servings + ' מנות' : '', weight ? fmt(weight) + ' גרם' : '']
+      : nut.bases.length === 1 ? ['ל-100 גרם'] : [];
+    if (b.computed) parts.push('מחושב');
+    basis.textContent = parts.filter(Boolean).join(' · ');
+    basis.hidden = !basis.textContent;
+    if (seg) seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.k === cur)));
+  };
+  if (seg) nut.bases.forEach(([k, label]) => seg.appendChild(el('button', { type: 'button', 'data-k': k, text: label, onclick: () => { cur = k; saveBasis(k); paint(); if (onBasis) onBasis(); } })));
+  paint();
+  wrap.append(...[seg, grid, more, basis].filter(Boolean));
+  return wrap;
+}
+
+/* מה שהכפתור בעריכה מעתיק: ההנחיה ל-AI, עם הפורמט שהמתכון קורא */
+export const AI_PROMPT = `קח את המתכון שמופיע אחרי ההנחיה, והחזר אותו רק בפורמט הבא — בעברית, בלי שום טקסט לפני או אחרי, בלי הדגשות ובלי כוכביות מלבד אלה שבתבנית. חשב את הערכים התזונתיים לפי הכמויות שבמתכון; אם חסר נתון — הערכה סבירה. מספרים בלבד, בלי טווחים.
+
+מנות: <מספר המנות>
+משקל כולל: <המשקל של כל המתכון המוכן, בגרם> גרם
+
+ערכים ל-100 גרם: קלוריות: <מספר> | חלבון: <מספר> גרם | פחמימות: <מספר> גרם | שומן: <מספר> גרם | סיבים: <מספר> גרם | סוכרים: <מספר> גרם
+ערכים לכל המנה: קלוריות: <מספר> | חלבון: <מספר> גרם | פחמימות: <מספר> גרם | שומן: <מספר> גרם | סיבים: <מספר> גרם | סוכרים: <מספר> גרם
+
+מצרכים:
+* <כמות> <מצרך>
+* <כמות> <מצרך>
+
+אופן ההכנה:
+1. <שלב>
+2. <שלב>
+
+טיפים:
+<טיפ, אם יש>
+
+המתכון:
+`;
 
 /* --- המסך --- */
 
@@ -586,7 +723,7 @@ export function buildPlayer(id, ctx) {
     const head = el('div.sh-head', null, el('h3', { text: v.title }),
       el('button.ibtn.flat', { type: 'button', 'aria-label': 'עוד', onclick: () => openMenu() }, icon('dots')));
     const meta = el('div.meta', { text: [cat, name, 'נשמר ' + whenText(v.at)].filter(Boolean).join(' · ') });
-    panel.append(el('div.sh-top', null, grab, head), meta, recipeBody(v));
+    panel.append(el('div.sh-top', null, grab, head), meta, recipeBody(v, () => ctx.onChanged()));
     layer.appendChild(panel);
     layer.classList.add('reading');
     /* הגיליון בתחתית — הפס שמתחתיו בצבע שלו, ולא שחור מתחת ללבן */
