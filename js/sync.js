@@ -127,6 +127,7 @@ function drawSetup(root, paint) {
   const card = el('div.card.stack');
   root.appendChild(card);
   card.appendChild(el('p.hint', { text: 'המתכונים יכולים לשבת בתיקייה בדרייב שלך, ולהיראות זהה בטלפון ובמחשב. אין התחברות לחשבון — רק כתובת של הסקריפט שהקמת, והקוד שלו.' }));
+  card.appendChild(el('p.hint', { text: 'הסקריפט גם מביא את הקבצים של הסרטונים מאינסטגרם ומפייסבוק, כדי שינוגנו בנגן שלנו. בלעדיו זה עובר דרך שירות חינמי שנחסם לפעמים — ואז הסרטון מתנגן בנגן של אינסטגרם.' }));
   const url = field('כתובת הסקריפט', { type: 'url', inputmode: 'url', placeholder: 'https://script.google.com/macros/s/…/exec' });
   url.input.classList.add('ltr');
   const code = field('קוד הכתיבה', { type: 'text', placeholder: 'הקוד שהסקריפט הדפיס ביומן' });
