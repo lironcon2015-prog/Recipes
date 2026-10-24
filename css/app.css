@@ -463,7 +463,9 @@ input[type="checkbox"]:checked::after { inset-inline-start: 21px; background: va
 .nut > div.k b { color: var(--gold-text); }
 .rbody .grp { font-size: .82rem; font-weight: 800; color: var(--gold-text); margin: .9rem 0 .2rem; }
 .nutp { display: grid; gap: .45rem; margin-bottom: .4rem; }
-.nutp .nut { margin-bottom: 0; }
+.nutp .nut { margin-bottom: 0; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: copy; }
+.nutp .nut:active > div { background: var(--gold-soft); border-color: var(--gold-line); }
+.nutp .nmore { cursor: copy; }
 .nseg button { height: 34px; font-size: .82rem; }
 .nutp .nmore { margin: 0; font-size: .82rem; }
 .nbasis { margin: 0; font-size: .76rem; color: var(--faint); }

@@ -25,7 +25,7 @@ import {
   platformName, embedUrl, isPortrait, playable, mediaFresh, posterCandidates, readOnly
 } from './videos.js';
 import { refreshMedia, whyNoFile } from './preview.js';
-import { el, icon, toast, whenText, openLayer, onEscape, holdEdge, sheetTone } from './ui.js';
+import { el, icon, toast, whenText, openLayer, onEscape, holdEdge, sheetTone, copyText } from './ui.js';
 
 /* הנגן המשובץ של אלה הוא דף שלם — מנגנים אצלם רק את הקובץ */
 const CHROME = new Set(['instagram', 'facebook', 'tiktok']);
@@ -173,13 +173,14 @@ const readChecks = id => { try { return new Set(JSON.parse(localStorage.getItem(
 const saveChecks = (id, set) => { try { localStorage.setItem(CHECK_KEY(id), JSON.stringify([...set])); } catch (e) { /* לא קריטי */ } };
 
 function recipeBody(v, onBasis) {
+  const title = v.title;
   const box = el('div.rbody');
   const blocks = parseNote(v.note);
   const checks = readChecks(v.id);
   let n = 0;
   let firstFacts = true;
   const nut = nutrition(blocks);
-  if (nut.bases.length) { box.appendChild(nutPanel(nut, onBasis)); firstFacts = false; }
+  if (nut.bases.length) { box.appendChild(nutPanel(nut, onBasis, title)); firstFacts = false; }
   blocks.forEach(b => {
     if (b.type === 'meta' || (b.type === 'facts' && b.basis)) return;
     if (b.type === 'facts' && firstFacts) {
@@ -236,12 +237,24 @@ function nutCell(f, i) {
 }
 
 /** המתג (ל-100 גרם · למנה · כל המנה), ארבעת העיקריים, והשאר בשורה */
-function nutPanel(nut, onBasis) {
+function nutPanel(nut, onBasis, title) {
   const wrap = el('div.nutp');
   let cur = readBasis(nut.bases);
   const seg = nut.bases.length > 1 ? el('div.tseg.nseg', { role: 'group', 'aria-label': 'הערכים לפי' }) : null;
-  const grid = el('div.nut');
-  const more = el('p.rp.nmore');
+  /* נגיעה בערכים מעתיקה אותם — להדבקה ב-Gympro. הטקסט אומר לאיזה בסיס הם,
+     כדי שערכים למנה לא יידבקו כאילו הם ל-100 גרם */
+  const copy = async () => {
+    const { servings, weight } = nut.meta;
+    const head = cur === 'g100' ? 'ערכים ל-100 גרם'
+      : cur === 'serving' ? 'ערכים למנה' + (servings ? ' (מנה אחת מתוך ' + servings + (weight ? ', ' + fmt(weight / servings) + ' גרם' : '') + ')' : '')
+      : 'ערכים לכל המנה' + (servings || weight ? ' (' + [servings ? servings + ' מנות' : '', weight ? fmt(weight) + ' גרם' : ''].filter(Boolean).join(', ') + ')' : '');
+    const { main, rest } = ordered(nut.by[cur].list);
+    const vals = [...main, ...rest].map(f => f.k + ' ' + f.v.replace(/^כ-?\s*/, '')).join(' | ');
+    const ok = await copyText(head + ' — ' + title + ':\n' + vals);
+    toast(ok ? 'הועתקו ה' + head.split(' (')[0] : 'לא הצלחנו להעתיק — נסה שוב');
+  };
+  const grid = el('button.nut', { type: 'button', 'aria-label': 'העתקת הערכים', onclick: copy });
+  const more = el('p.rp.nmore', { onclick: copy });
   const basis = el('p.nbasis');
   const { servings, weight } = nut.meta;
   const paint = () => {
@@ -269,7 +282,9 @@ function nutPanel(nut, onBasis) {
 }
 
 /* מה שהכפתור בעריכה מעתיק: ההנחיה ל-AI, עם הפורמט שהמתכון קורא */
-export const AI_PROMPT = `קח את המתכון שמופיע אחרי ההנחיה, והחזר אותו רק בפורמט הבא — בעברית, בלי שום טקסט לפני או אחרי, בלי הדגשות ובלי כוכביות מלבד אלה שבתבנית. חשב את הערכים התזונתיים לפי הכמויות שבמתכון; אם חסר נתון — הערכה סבירה. מספרים בלבד, בלי טווחים.
+export const AI_PROMPT = `קח את המתכון שמופיע אחרי ההנחיה, והחזר אותו רק בפורמט הבא — בעברית, בלי שום טקסט לפני או אחרי, בלי הדגשות ובלי כוכביות מלבד אלה שבתבנית. מספרים בלבד, בלי טווחים.
+
+חשב את הערכים התזונתיים מהמרכיבים: לכל מרכיב לפי הכמות שלו, ואז סכום. אם במתכון כבר כתובים ערכים — אל תעתיק אותם: בדוק אותם מול החישוב שלך, ואם הם לא תואמים, כתוב את החישוב שלך. בדוק גם שהקלוריות מתאימות למאקרו (חלבון ופחמימות 4 לגרם, שומן 9 לגרם), בסטייה של עד 10%. הערכים ל-100 גרם הם הערכים לכל המנה חלקי המשקל הכולל, כפול 100. אם חסר נתון — הערכה סבירה.
 
 מנות: <מספר המנות>
 משקל כולל: <המשקל של כל המתכון המוכן, בגרם> גרם
