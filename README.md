@@ -49,3 +49,29 @@ tools-check.mjs       בדיקה לפני פרסום
 GitHub Pages מענף `main`, שורש הריפו. דחיפה ל-`main` היא הפריסה.
 בכל שינוי קוד: העלאת `VERSION` ב-`sw.js` **ו**ב-`js/version.js`, ואז
 `node tools-check.mjs`.
+
+## שרת הסרטונים בקלאודפלייר
+
+הקובץ של סרטון מאינסטגרם ומפייסבוק מגיע משלושה מקומות ביחד, והראשון זוכה: השרת הזה,
+הסקריפט בדרייב (⚙ → סנכרון לדרייב), ו-jina — שירות חינמי שנחסם לפעמים בגלל אחרים. השרת
+הוא המהיר: עונה בחלקיק שנייה, בלי ההתעוררות של הסקריפט. אותו שרת משרת גם את nines.
+
+הקוד ב-`server/`, וקלאודפלייר פורס אותו מגיטהאב בכל דחיפה ל-`main` — כמו ב-MGivatayim.
+פעם אחת, בדפדפן (גם מהטלפון), בערך עשר דקות:
+
+1. **dash.cloudflare.com** (אותו חשבון של MGivatayim) ← **Workers & Pages** ← **Create application**.
+2. ליד **Import a repository** ← **Get started**. אם `Recipes` לא ברשימה: **Configure GitHub
+   App** (או "Missing a repository?") ← להוסיף את `Recipes` לריפו שקלאודפלייר רשאי לראות.
+3. בוחרים את `Recipes`. במסך ההגדרות:
+   - **Project name:** `media` — **בדיוק כך**. שם אחר מפיל את הבנייה.
+   - **Build command:** ריק.
+   - **Deploy command:** להשאיר `npx wrangler deploy`.
+   - **Root directory** (תחת Advanced settings): `server`
+4. **Save and Deploy**, ומחכים ל-"Success".
+5. **הדומיין:** בשרת `media` ← **Settings** ← **Domains & Routes** ← **Add** ← **Custom domain** ←
+   `media.lironcon.com` ← **Add domain**. לא `workers.dev` — הסלולרי חוסם אותו.
+6. בדיקה: פותחים **https://media.lironcon.com** — צריך להופיע `"server":"cloudflare"`.
+7. מומלץ: **Settings** ← **Builds** ← **Branch control**: רק `main`.
+
+מכאן כל שינוי ב-`server/` שמגיע ל-`main` עולה לבד. עד שהשרת קיים, האפליקציה פשוט לא
+מקבלת ממנו תשובה, והשניים האחרים ממשיכים.
