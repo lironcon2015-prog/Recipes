@@ -22,7 +22,7 @@ import * as posters from './posters.js';
 import { state as sync, syncNow, onSync, autoOn } from './sync.js';
 import { $, el, icon, toast, whenText, agoText, sheet, afterLayers, readClipboard } from './ui.js';
 import { VERSION } from './version.js';
-import { buildPlayer, summary } from './player.js';
+import { buildPlayer, summary, AI_PROMPT } from './player.js';
 
 /* רשת או לפי קטגוריה — הבחירה נשמרת במכשיר */
 const VIEW_KEY = 'rc:view';
@@ -283,6 +283,28 @@ function paintAll() {
 
 /* --- גיליון ההוספה והעריכה --- */
 
+/* הכפתור שמעתיק את ההנחיה ל-AI: מדביקים אותה בג׳מיני או בקלוד, ומתחתיה את
+   המתכון כמו שהוא; מה שחוזר — בפורמט שהמתכון קורא (ערכים ל-100 גרם, לכל המנה) */
+function aiCopy() {
+  return el('button.ai-copy', { type: 'button', onclick: async () => {
+    let ok = false;
+    try { await navigator.clipboard.writeText(AI_PROMPT); ok = true; } catch (e) { ok = copyByHand(AI_PROMPT); }
+    toast(ok ? 'ההנחיה הועתקה. מדביקים אותה בג׳מיני או בקלוד, ומתחתיה את המתכון.' : 'לא הצלחנו להעתיק — נסה שוב');
+  } }, icon('clip'), el('span', null, el('b', { text: 'העתקת ההנחיה ל-AI' }), el('small', { text: 'ערכים ל-100 גרם, למנה ולכל המנה — בפורמט שהאפליקציה קוראת' })));
+}
+
+/* clipboard.writeText נדחה בכמה תצוגות של אפליקציות — העתקה מתיבה זמנית */
+function copyByHand(text) {
+  const area = el('textarea', { readonly: true, style: 'position:fixed;top:0;opacity:0' });
+  area.value = text;
+  document.body.appendChild(area);
+  area.select();
+  let ok = false;
+  try { ok = document.execCommand('copy'); } catch (e) { /* אין */ }
+  area.remove();
+  return ok;
+}
+
 export function openEditor(prefill, video) {
   if (readOnly()) return;
   afterLayers(() => buildEditor(prefill, video));
@@ -310,6 +332,7 @@ function buildEditor(prefill, video) {
     note.addEventListener('input', grow);
     setTimeout(grow, 300);
     note.value = video ? video.note : '';
+    note.placeholder = 'מדביקים כאן את מה שה-AI החזיר — או כל טקסט: שורה שנגמרת בנקודתיים היא כותרת, ושורה שמתחילה ב-* היא פריט ברשימה.';
     const pick = el('div.pick');
     const newCat = el('input.inp', { type: 'text', id: 'f-newcat', placeholder: 'שם הקטגוריה החדשה', hidden: true });
     const err = el('div.err', { hidden: true });
@@ -433,7 +456,7 @@ function buildEditor(prefill, video) {
       el('label.field', null, el('span', { text: 'שם' }), title),
       el('div.field', null, el('span', { text: 'קטגוריה' }), pick),
       newCat,
-      el('label.field', null, el('span', { text: 'הערה או המתכון (לא חובה)' }), note),
+      el('div.field', null, el('span', { text: 'המתכון (לא חובה)' }), aiCopy(), note),
       err,
       el('div.sheet-go', null, save)
     );
