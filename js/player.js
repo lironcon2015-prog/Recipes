@@ -24,7 +24,7 @@ import {
   categoryName, listCategories, updateVideo, removeVideo, getVideo,
   platformName, embedUrl, isPortrait, playable, mediaFresh, posterCandidates, readOnly
 } from './videos.js';
-import { refreshMedia } from './preview.js';
+import { refreshMedia, whyNoFile } from './preview.js';
 import { el, icon, toast, whenText, openLayer, onEscape, holdEdge, sheetTone } from './ui.js';
 
 /* הנגן המשובץ של אלה הוא דף שלם — מנגנים אצלם רק את הקובץ */
@@ -216,7 +216,12 @@ export function buildPlayer(id, ctx) {
         if (owner) updateVideo(v.id, { media: got.media });
         v.media = got.media; v.mediaAt = Date.now();
         mode = 'file';
-      } else mode = got.blocked ? 'blocked' : (fallback ? 'embed' : 'out');
+      } else {
+        mode = got.blocked ? 'blocked' : (fallback ? 'embed' : 'out');
+        /* הנגן שלהם במקום שלנו — אומרים למה, ומה פותר את זה */
+        const why = !got.blocked && owner && whyNoFile(got.log, name);
+        if (why) toast(why);
+      }
       paintCover();
     });
     return pending;
